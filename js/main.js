@@ -1,14 +1,9 @@
 var gdata
 
 function createTable() {
+   d3.select('#msg').html('createTable...')
 
-  // const width = 800;
-	// const height = 600;
-
-	// // Append empty SVG container and set size
-	// const svg = d3.select('body').append('svg')
-	//   .attr('width', width)
-	//   .attr('height', height);
+    d3.select('#main').html('')
 
     let table = d3.select('#main').append('table')
 
@@ -45,19 +40,18 @@ function createTable() {
           .text(d => d[col])
       }
     }
+    d3.select('#msg').html('createTable... done')
 }
 
 function show_color_id(color_id) {
+    if (color_id === undefined) {
+      color_id = 'green-blue'
+    }
 
-  // const width = 800;
-	// const height = 600;
-
-	// // Append empty SVG container and set size
-	// const svg = d3.select('body').append('svg')
-	//   .attr('width', width)
-	//   .attr('height', height);
+    d3.select('#msg').html('show_color_id...')
 
     d3.select('#main').html('')
+
     let table = d3.select('#main').append('table')
 
     data = gdata.filter(d => d.color_id == color_id)
@@ -91,9 +85,12 @@ function show_color_id(color_id) {
           .text(d => d[col])
       }
     }
+
+    d3.select('#msg').html('show_color_id... done')
 }
 
 function show_group_by() {
+    d3.select('#msg').html('show_group_by...')
 
     d3.select('#main').html('')
 
@@ -111,13 +108,18 @@ function show_group_by() {
 
     // Add a header for each group
     groups.append('h3')
-        .text(([key]) => `Group: ${key}`)
-        .style('cursor', 'pointer') // Make the header clickable
+    .attr('class', 'group-header')
+    .html(([key]) => `<span class="triangle">▶</span> Group: ${key}`) // Add the triangle
+    .style('cursor', 'pointer') // Make the header clickable
         .on('click', function(event, [key, values]) {
             // Toggle visibility of the group's children
             const groupDiv = d3.select(this.parentNode).select('.items');
             const isHidden = groupDiv.style('display') === 'none';
             groupDiv.style('display', isHidden ? 'flex' : 'none');
+            
+          // Update the triangle indicator
+          const triangle = d3.select(this).select('.triangle');
+          triangle.text(isHidden ? '▼' : '▶');
         });
 
     // Add a container for the group's items (initially hidden)
@@ -149,9 +151,12 @@ function show_group_by() {
               .style('color', '#555'); // Optional: Change text color
       });
   
+      d3.select('#msg').html('show_group_by... done')
 }
 
 function show_group_by2() {
+  d3.select('#msg').html('show_group_by2...')
+
   // Clear the existing content
   d3.select('#main').html('');
 
@@ -167,13 +172,18 @@ function show_group_by2() {
 
   // Add a header for each 'color_id' group
   groups.append('h3')
-      .text(([key]) => `Group: ${key}`)
-      .style('cursor', 'pointer') // Make the header clickable
+  .attr('class', 'group-header')
+  .html(([key]) => `<span class="triangle">▶</span> Group: ${key}`) // Add the triangle
+  .style('cursor', 'pointer') // Make the header clickable
       .on('click', function(event, [key, values]) {
           // Toggle visibility of the group's children
           const groupDiv = d3.select(this.parentNode).select('.items');
           const isHidden = groupDiv.style('display') === 'none';
           groupDiv.style('display', isHidden ? 'block' : 'none');
+          
+        // Update the triangle indicator
+        const triangle = d3.select(this).select('.triangle');
+        triangle.text(isHidden ? '▼' : '▶');
       });
 
   // Add a container for the 'track_id' rows (initially hidden)
@@ -184,6 +194,9 @@ function show_group_by2() {
       .data(([key, tracks]) => Array.from(tracks), ([trackId, items]) => trackId) // Convert inner Map to array
       .join('div')
       .attr('class', 'track-row')
+      .style('flex-wrap', 'nowrap') // Prevent wrapping of images
+      .style('overflow-x', 'auto') // Add horizontal scrollbar if needed
+      .style('white-space', 'nowrap') // Ensure images stay on one line
       .style('margin-bottom', '10px') // Add spacing between rows
       .each(function([trackId, items]) {
           const trackRow = d3.select(this);
@@ -230,6 +243,7 @@ function show_group_by2() {
                       .style('color', '#555'); // Optional: Change text color
               });
       });
+      d3.select('#msg').html('show_group_by2... done')
 }
 
 //D = d3.csv('data/batch1_dataframe.csv')
@@ -247,7 +261,8 @@ D = d3.csv('data/summer_bee_dataset_open_train_bee_64_ids_batch1_sample_num_max.
       } catch {}
     }
 
-    show_group_by2()
+    createTable()
+    //show_group_by2()
   })
   .catch(error => {
     console.error('Error loading the data', error);

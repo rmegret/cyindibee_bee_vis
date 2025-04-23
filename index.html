@@ -6,7 +6,7 @@
     <link rel="icon" href="data:;base64,iVBORwOKGO=" />
     <link rel="stylesheet" href="css/style.css">
 </head>
-<body>    
+<body onload="show_visits_table()">
     <!-- Add HTML content, SVG drawing area, ... -->
     
     <!-- D3 bundle -->
@@ -16,12 +16,20 @@
     <!-- <script src="js/main.js"></script> -->
     <script src="js/main.js"></script>
 
-    DEMO BEE VISUALIZATION
+    <h1>DEMO BEE VISUALIZATION</h1>
 
-    <button onclick="createTable()">Basic table</button>
-    <button onclick="show_color_id()">Group by color_id</button>
-    <button onclick="show_group_by()">Group by color_id, horizontal scroll</button>
-    <button onclick="show_group_by2()">Group by (color_id, track_id), horizontal scroll</button>
+    <div>Flowerpatch dataset:
+    <button onclick="show_visits_table()">Show Flowerpatch Visits</button>
+    <button onclick="show_flowers_table()">Show Flowers</button>
+    <button onclick="show_bee_labels_table()">Show Bee Labels</button>
+    <button onclick="show_tracks_table()">Show Tracks</button>
+    </div>
+
+    <div>ReID dataset:
+    <button onclick="show_reid_table()">ReID table</button>
+    <button onclick="show_reid_table(true)">ReID table with Images (⚠ heavy)</button>
+    <button onclick="show_groupby2()">Show Images, group by color_id and track_id (⚠ heavy)</button>
+    </div>
 
     <div id="msg"></div>
 

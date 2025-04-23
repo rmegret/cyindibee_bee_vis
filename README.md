@@ -16,7 +16,7 @@ and open a browser at port 8001 to access `index.html`
 
 # Datasets
 
-The content of `data/`is not in this repo, please copy or unzip folder `flowerpatch` provided separately inside `data` to have the following structure:
+The content of `data/flowerpatch` is in this repo it has the following structure:
 ```
 data/flowerpatch
 data/flowerpatch/flowerpatch_20240606_11h04.tracks_visits.csv

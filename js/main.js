@@ -112,7 +112,7 @@ function show_bee_labels_table() {
 
 
 
-function show_tracks_table() {
+function show_tracks_table(show_images=false, only_with_crops=false) {
   console.log('show_tracks_table')
   load_data('data/flowerpatch/flowerpatch_20240606_11h04.tracks_visits.csv',
     function(data) {
@@ -120,17 +120,32 @@ function show_tracks_table() {
         row['track_id'] = +row['track_id']
         row['frame'] = +row['frame']
       }
+
+      if (only_with_crops) {
+        data = data.filter(d => d.crop_filename!='')
+      }
+
       create_table(data.sort(sortByMultipleProperties(['track_id','frame'])), ['track_id','frame','flower_id','cx','cy','crop_filename'], "#main")
+      
+      var div = d3.select('#main').insert("div",":first-child")  // Prepend button callback before table
+      div.append("button")
+        .on('click', () => show_tracks_table(!show_images, only_with_crops)) 
+        .text("Toogle images")
+      div.append('button') 
+        .on('click', () => show_tracks_table(show_images, !only_with_crops)) 
+        .text("Toogle filter 'has crop'")
 
       // Add image in column crop_filename if non empty
-      d3.select('#main > table > tbody')
-      .selectAll('tr>td.col_crop_filename')
-      .html(function(d) {
-        if ((d.crop_filename == undefined)||(d.crop_filename == '')) {
-          return `no img`
-        }
-        return `<div>${d.crop_filename}</div><div><img src="${'data/flowerpatch/crops/'+d.crop_filename}" style="width:128px; height:128px;"/></div>`
-      })
+      if (show_images) {
+        d3.select('#main > table > tbody')
+        .selectAll('tr>td.col_crop_filename')
+        .html(function(d) {
+          if ((d.crop_filename == undefined)||(d.crop_filename == '')) {
+            return `no img`
+          }
+          return `<div>${d.crop_filename}</div><div><img src="${'data/flowerpatch/crops/'+d.crop_filename}" style="width:128px; height:128px;"/></div>`
+        })
+      }
     }
   ).then( ()=>console.log('DONE') )
 }
@@ -159,9 +174,8 @@ function show_reid_table(show_images=false, filter_color_id=false) {
 
       
       d3.select('#main').insert("button",":first-child") // Prepend button callback before table
-       //.attr("href","#")
-      .on('click', () => show_reid_table(!show_images, filter_color_id)) 
-      .text("Toogle images")
+        .on('click', () => show_reid_table(!show_images, filter_color_id)) 
+        .text("Toogle images")
       
 
       if (show_images) {

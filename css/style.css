@@ -2,6 +2,15 @@ svg {
   border: 1px solid black;
 }
 
+/* svg.flowerpatch {
+  width: 100%;
+  height: auto;
+}
+img.flowerpatch {
+  width: 100%;
+  height: auto;
+} */
+
 table, th, td {
 	border: 1px solid black;
 }

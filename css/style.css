@@ -2,6 +2,32 @@ svg {
   border: 1px solid black;
 }
 
+#table-div {
+	border: 1px solid black;
+}
+#track-div {
+	border: 1px solid black;
+}
+
+.item-container {
+	border: 2px solid transparent;
+}
+.item-container.scrubbed {
+	border: 2px solid blue;
+}
+
+.item-container.selected {
+	border: 2px solid red;
+}
+.item-container.selected.scrubbed {
+	border: 2px solid purple;
+}
+
+.item-container.scrubbed > div.frame-id {
+	/* border: 2px solid blue; */
+	background: yellow;
+}
+
 /* svg.flowerpatch {
   width: 100%;
   height: auto;

@@ -16,6 +16,9 @@ and open a browser at port 8001 to access `index.html`
 
 # Datasets
 
+New GUI target `data/reid` dataset, too big to version here.
+
+
 The content of `data/flowerpatch` is in this repo it has the following structure:
 ```
 data/flowerpatch

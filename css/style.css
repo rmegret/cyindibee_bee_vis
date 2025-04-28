@@ -24,8 +24,20 @@ svg {
 }
 
 .item-container.scrubbed > div.frame-id {
-	/* border: 2px solid blue; */
 	background: yellow;
+}
+
+#top-div {
+	display: flex;
+	/* border: yellow solid 1px; */
+}
+#table-div {
+	flex: 0.6;
+	border: black solid 1px;
+}
+#detail-div {
+	flex: 0.4;
+	border: black solid 1px;
 }
 
 /* svg.flowerpatch {

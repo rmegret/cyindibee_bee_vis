@@ -9,6 +9,13 @@ svg {
 	border: 1px solid black;
 }
 
+.track-items {
+  outline: 2px solid black;
+}
+.track-items:focus {
+  outline: 2px solid blue;
+}
+
 .item-container {
 	border: 2px solid transparent;
 }

@@ -9,6 +9,15 @@ svg {
 	border: 1px solid black;
 }
 
+.track-container {
+	border: 2px solid grey;
+}
+.track-image-container {
+	display: flex;
+	flex-wrap: nowrap;
+	white-space: nowrap;
+}
+
 .track-items {
   outline: 2px solid black;
 }
@@ -22,12 +31,22 @@ svg {
 .item-container.scrubbed {
 	border: 2px solid blue;
 }
-
 .item-container.selected {
 	border: 2px solid red;
 }
 .item-container.selected.scrubbed {
 	border: 2px solid purple;
+}
+
+.item-container.firstOfTrack {
+	/* border-left: 4px solid black; */
+}
+.item-separator {
+	height: inherit;
+	width: 0px;
+	border-left: 4px solid black;
+	/* padding-left: 10px;
+	padding-right: 10px; */
 }
 
 .item-container.scrubbed > div.frame-id {
@@ -49,18 +68,20 @@ svg {
 .flex-left,
 .flex-center,
 .flex-right {
-  flex: 1;
+  /* flex: 1; */
   display: flex;
 }
 
 .flex-left {
-  justify-content: flex-start;
+  /* justify-content: flex-start; */
+	margin-right: auto;
 }
 .flex-center {
-  justify-content: center;
+  /* justify-content: center; */
 }
 .flex-right {
-  justify-content: flex-end;
+  /* justify-content: flex-end; */
+	margin-left: auto;
 }
 
 #top-div {
@@ -140,6 +161,41 @@ img.flowerpatch {
   height: auto;
 } */
 
+dialog.fullscreen {
+	width: calc(100% - 60px);
+	height: calc(100% - 60px);
+	margin: 0;
+	padding: 10px;
+	border: solid red 2px;
+	border-radius: 10px;
+	box-shadow: 0 0 10px rgba(0,0,0,0.3);
+	position: fixed;
+	top: 20px;
+	left: 20px;
+}
+
+dialog.fullscreen::backdrop {
+	background-color: rgba(0, 0, 0, 0.4);
+}
+
+dialog .dialog-header {
+	display: flex;
+}
+dialog .dialog-header button {
+	display: flex;
+	height: fit-content;
+	width: fit-content;
+}
+
+dialog .dialog-toolbar {
+	display: flex;
+}
+
+dialog table {
+	overflow-x: scroll;
+	overflow-y: scroll;
+}
+
 table, th, td {
 	border: 1px solid black;
 }
@@ -159,4 +215,31 @@ table, th, td {
 .bar {
 	fill: steelblue;
 	shape-rendering: crispEdges;
+}
+
+
+span.trackflag.ref {
+	background-color: greenyellow;
+}
+span.trackflag.valid {
+	background-color: green;
+}
+span.trackflag.outlier {
+	background-color: orange;
+}
+span.trackflag.unknown {
+	background-color: gray;
+}
+
+span.beeidflag.ref {
+	background-color: greenyellow;
+}
+span.beeidflag.valid {
+	background-color: green;
+}
+span.beeidflag.outlier {
+	background-color: orange;
+}
+span.beeidflag.unknown {
+	background-color: gray;
 }

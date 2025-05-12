@@ -5,28 +5,38 @@ var scrub_on = false
 var show_features = false
 var gui
 
+// Require confirmation to leave page
+window.addEventListener("beforeunload", (event) => {
+  event.preventDefault(); // Required for some browsers
+  event.returnValue = ""; // Trigger confirmation dialog
+});
+
+// Main function to launch the GUI
 async function show_track_util() {
   console.log('show_track_util')
 
   const main = d3.select('#main')
 
-  //gtracks.visits = await d3.csv('data/flowerpatch/flowerpatch_20240606_11h04.visits.csv')
-  //gtracks.tracks = await d3.csv('data/flowerpatch/flowerpatch_20240606_11h04.tracks.csv')
-  //const tracks = await d3.csv('/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch1_sample_num_max.csv')
-  let tracks = await d3.csv('/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch2_sample_num_max.csv')
-
-  convert_columns_to_number(tracks, ['key','track_id','frame','pass'])
-  // Sanitize pass
-  for (det of tracks) {
-    det['pass'] = Math.round(det['pass'])
-    det['track_key'] = `B${det['batch']}_E${det['environment']}_b${det['background']}_P${det['pass']}_r${det['bee_range']}_T${det['track_id']}`
-  }
-  //tracks = d3.sort( tracks, d => d.new_filepath ) // Do not sort to keep keys aligned
-  console.log(`show_track_util: tracks loaded, ${tracks.length} rows`)
-
   gui = new TrackSplitGUI({parentElement: main.node(),
-                           tracks: tracks
+                           tracks: []
                           })
+  gui.load_csv('/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch2_sample_num_max.csv')
+}
+
+
+function categories_to_indices(data, category_field, index_field) {
+  // Create a field `index_field` out of `category_field` in the table data
+  // Returns the mapping
+  const categories = Array.from(new Set(data.map(d => d[category_field])));
+  const catToId = new Map(categories.map((name, i) => [name, i+1])); // Avoid id=0, keep it for undefined
+  data.forEach(d => d[index_field] = catToId.get(d[category_field]));
+  return catToId
+}
+function drop_columns(data, fields) {
+  data.forEach(d => {fields.forEach(f => delete d[f])});
+}
+function new_column(data, output_field, fun) {
+  data.forEach(d => d[output_field] = fun(d));
 }
 
 // Mixin to make a D3 class component advertise its events in a simple way
@@ -95,6 +105,330 @@ function scrollToCenter(container, target, scrollBehavior = "smooth") {
 throttledScrollToCenter = throttleTrailing(scrollToCenter, 100)
 
 
+class LoadDataDialog {
+  // Generic
+  constructor(title = 'Data Dialog') {
+    const dialog = this
+    if (this.node) return; // already initialized
+
+    this.node = document.createElement('dialog');
+    this.node.classList.add('fullscreen');
+    this.node.setAttribute('id','dialog')
+    document.body.appendChild(this.node);
+
+    this.dialogD3 = d3.select(this.node)
+
+    this.title = title
+    this.dataset_root = '/data/'
+
+    this.init()
+  }
+  open(root) {
+    if (root)
+      this.dataset_root = root
+    this.update()
+    this.node.showModal();
+  }
+  close() {
+    if (this.node) {
+      this.node.close();
+    }
+  }
+
+  // Specific
+  init() {
+    const dialog = this
+    this.node.innerHTML = `
+      <div id="dialog-header" class='flex-container'>
+        <div class='flex'><h2 id="dialog-title"></h2></div>
+        <button id="dialog-close" class='flex-left'>Close</button>
+      </div>
+      <div id="dialog-toolbar" class='flex-container'>
+        <select id="csvSelector"></select>
+        <button id="loadButton">Load</button>
+      </div>
+      <div id="dialog-content">
+        <pre id="csvOutput"></pre>
+        <pre id="csvOutputDebug"></pre>
+      </div>
+    `;
+    this.node.querySelector('#dialog-title').innerText = this.title;
+    //this.node.querySelector('#dialog-content').innerHTML = 'INIT';
+    this.node.querySelector('#dialog-close').addEventListener('click', () => dialog.close());
+    this.node.querySelector('#loadButton').addEventListener('click', () => dialog.load_button_click());
+    this.contentD3 = d3.select(this.node.querySelector('#dialog-content'))
+
+    this.selector = this.node.querySelector('#csvSelector');
+    this.output = this.node.querySelector('#csvOutput');
+    this.outputDebug = this.node.querySelector('#csvOutputDebug');
+  }
+  update() {
+    const dialog = this
+
+    console.log('update')
+
+    const selector = dialog.selector
+    const output = dialog.output
+
+    selector.innerHTML = '';
+
+    const dataset_root = dialog.dataset_root
+
+    const P = (async () => {
+      // Search in 'datasets/' directory
+      dialog.outputDebug.textContent = `Looking for CSV files in ${dataset_root}`
+      const csvFiles = await dialog.findCSVFiles(dataset_root);
+
+      csvFiles.forEach(path => {
+          const option = document.createElement('option');
+          option.value = path;
+          option.textContent = path;
+          selector.appendChild(option);
+      });
+
+      selector.addEventListener('change', async () => {
+          const selected = selector.value;
+          const csvText = await fetch(selected).then(res => res.text());
+          output.textContent = csvText;
+      });
+    })().then(() => console.log('LOADING DONE'))
+    
+  };
+  load_button_click() {
+    const csv_path = this.selector.value;
+    gui.load_csv(csv_path)
+    this.close()
+  }
+  async fetchAndParseDirectory(url) {
+    const html = await fetch(url).then(res => res.text());
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const links = Array.from(doc.querySelectorAll('a'))
+        .map(a => a.getAttribute('href'))
+        .filter(href => href && !href.startsWith('?') && href !== '../');
+    return links;
+  }
+
+  async findCSVFiles(basePath, patternFn = path => path.endsWith('.csv')) {
+      const dialog = this
+      const queue = [basePath];
+      const csvPaths = [];
+
+      while (queue.length > 0) {
+          const current = queue.pop();
+          const fullUrl = new URL(current, window.location.origin).href;
+          
+          dialog.outputDebug.textContent += `\nVisiting ${fullUrl}`;
+
+          const entries = await this.fetchAndParseDirectory(fullUrl);
+
+          for (const entry of entries) {
+              const fullPath = current + entry;
+              if (entry.endsWith('/')) {
+                  // It's a subdirectory
+                  queue.push(fullPath);
+              } else if (patternFn(fullPath)) {
+                  csvPaths.push(fullPath);
+              }
+          }
+      }
+
+      return csvPaths;
+  }
+}
+
+class TableDialog {
+  // Generic
+  constructor(title = 'Table Dialog') {
+    const dialog = this
+    if (this.node) return; // already initialized
+
+    this.node = document.createElement('dialog');
+    this.node.classList.add('fullscreen');
+    this.node.setAttribute('id','dialog')
+    this.node.innerHTML = `
+      <div id="dialog-header" class='flex-container'>
+        <div class='flex'><h2 id="dialog-title"></h2></div>
+        <button id="dialog-close" class='flex-left'>Close</button>
+      </div>
+      <div id="dialog-toolbar">
+        Group by:
+        <button id="button_groupby_track_key">track_key</button>
+        <button id="button_groupby_bee_id">bee_id</button>
+      </div>
+      <div id="dialog-content"></div>
+    `;
+    document.body.appendChild(this.node);
+
+    this.dialogD3 = d3.select(this.node)
+
+    this.node.querySelector('#dialog-title').innerText = title;
+    this.node.querySelector('#dialog-content').innerHTML = 'INIT';
+    this.node.querySelector('#dialog-close').addEventListener('click', () => dialog.close());
+    this.dialogD3.select('#button_groupby_track_key').on('click', () => {dialog.aggMode='track_key'; dialog.update()})
+    this.dialogD3.select('#button_groupby_bee_id').on('click', () => {dialog.aggMode='bee_id'; dialog.update()})
+    this.contentD3 = d3.select(this.node.querySelector('#dialog-content'))
+
+    this.aggMode = 'track_key'
+  }
+  open() {
+    this.update()
+    this.node.showModal();
+  }
+  close() {
+    if (this.node) {
+      this.node.close();
+    }
+  }
+
+  // Specific
+  update() {
+    const that = this
+
+    console.log('update')
+
+    that.update_visits()
+    that.render()  // create table
+  }
+  update_visits() {
+    const dialog = this
+    if (dialog.aggMode == 'track_key')
+      dialog.update_visits_track_key()
+    else if (dialog.aggMode == 'bee_id')
+      dialog.update_visits_bee_id()
+    else 
+      console.log('update_visits: unrecognized aggMode:', dialog.aggMode)
+  }
+  update_visits_track_key() {
+    const dialog = this
+
+    function agg(g) {
+      const item = g[0]
+      let start_frame = d3.min(g, d => d.frame_id )
+      let end_frame = d3.max(g, d => d.frame_id )
+      let nb_samples = g.length
+      let span_frames = end_frame-start_frame+1
+      let passes = [...new Set(g.map(d => d.pass))]
+      const visit = {
+        track_key: item['track_key'],
+        track_id: item['track_id'],
+        background: item['background'],
+        color_id: item['color_id'],
+        batch: item['batch'],
+        passes: passes,
+        bee_range: item['bee_range'],
+        environment: item['environment'],
+        crop_filename: item['new_filepath'],
+        video: item['new_filepath'].split('.')[0]+'.mp4',
+        start_frame: start_frame,
+        end_frame: end_frame,
+        span_frames: span_frames,
+        nb_samples: nb_samples,
+        sampling_ratio: nb_samples / span_frames
+      }
+
+      // HACK!!!
+      // Plug visit into individual items
+      g.forEach(item => {
+        item.visit = visit;
+      });
+
+      return visit
+    }
+  
+    const tracks = gui.tracks // HACK
+
+    // CONVERT detailed tracks into high level visits
+    const nested = d3.rollup(tracks, agg, d => d.track_key);
+    const flat = [];
+    for (const [track_key, item] of nested) {
+      //console.log(item)
+      item['track_key'] = track_key
+      flat.push(item);
+    }
+    dialog.visits = flat
+  }
+  update_visits_bee_id() {
+    const dialog = this
+
+    function agg(g) {
+      const item = g[0]
+      let nb_tracks = [...new Set(g.map(d => d.track_key))].length
+      let nb_samples = g.length
+      const visit = {
+        bee_id: item['bee_id'],
+        nb_tracks: nb_tracks,
+        nb_samples: nb_samples,
+        color_ids: [...new Set(g.map(d => d.color_id))],
+        track_keys: [...new Set(g.map(d => d.track_key))],
+        backgrounds: [...new Set(g.map(d => d.background))],
+        environments: [...new Set(g.map(d => d.environment))],
+        videos_keys: [...new Set(g.map(d => d.video_key))],
+      }
+      return visit
+    }
+  
+    const tracks = gui.tracks // HACK
+
+    // CONVERT detailed tracks into high level visits
+    const nested = d3.rollup(tracks, agg, d => d.bee_id);
+    const flat = [];
+    for (const [bee_id, item] of nested) {
+      //console.log(item)
+      item['bee_id'] = bee_id
+      flat.push(item);
+    }
+    dialog.bees = flat
+  }
+  render() {
+    const dialog = this
+
+    const parent = dialog.contentD3
+
+    // TABLE
+    parent.html('')
+    let top_div = parent
+      .append('div').attr('id','top-div')
+
+    if (dialog.aggMode == "track_key") { 
+      // ### GROUP BY TRACK_KEY
+      console.log('aggMode track_key from ',dialog.visits)
+      top_div.append("div")
+        .attr('id','table-div')
+      create_table(dialog.visits, ['track_key', 'color_id', 'background', 'batch', 'bee_range', 'passes', 'start_frame','end_frame', 'span_frames', 'nb_samples', 'sampling_ratio'], '#table-div')
+
+      parent.select('#table-div > table > tbody')
+        .selectAll('tr>td.col_track_key')
+        .html('')
+        .append('a')
+          .attr('href','#')
+          .text(d => d.track_key)
+          .on('click',(evt, d) => {
+                gui.crop_gallery.load_track( gui.get_track_by_key( d.track_key ) )
+                dialog.close()
+              })
+    } else {  
+      // ### GROUP BY BEE_ID
+      console.log('aggMode not track_key: bee_id, from ',dialog.bees)
+      top_div.append("div")
+        .attr('id','table-div')
+      create_table(dialog.bees, ['bee_id', 'nb_tracks', 'nb_samples', 'environments', 'backgrounds'], '#table-div')
+
+      parent.select('#table-div > table > tbody')
+        .selectAll('tr>td.col_bee_id')
+        .html('')
+        .append('a')
+          .attr('href','#')
+          .text(d => d.bee_id)
+          .on('click',(evt, d) => {
+                gui.crop_gallery.load_track( gui.get_track_by_bee_id( d.bee_id ) )
+                dialog.close()
+              })
+    }
+  };
+}
+
+
 class CropGallery {
   constructor(_config) {
     const view = this
@@ -112,6 +446,7 @@ class CropGallery {
     view.track = [];
     view.gallery = [];
     view.filter = null
+    //view.collapse = null
 
     view.scrubbed = undefined
     view.selected = {} // Mapping (item) => bool
@@ -196,7 +531,7 @@ class CropGallery {
     }
     view.gallery0 = d3.sort(view.gallery0, x => x.order)
     view.update()
-    view.select_gallery_item(view.gallery[0])
+    //view.select_gallery_item(view.gallery[0])
   }
   reorder_by_similarity(item) {
     let sim = gui.feature_band.compute_similarity({item:item}, this.gallery0)
@@ -221,6 +556,21 @@ class CropGallery {
 
     view.gallery = d3.sort(tmp_gallery, x => x.order)
 
+    function isNewTrack(previousGalleryItem, galleryItem) {
+      //console.log('isNewTrack',previousGalleryItem, galleryItem)
+      if (!previousGalleryItem) {
+        //console.log('!previousGalleryItem')
+        galleryItem.firstOfTrack = true
+      } else {
+        //console.log('previousGalleryItem')
+        galleryItem.firstOfTrack = (galleryItem.item.track_key != previousGalleryItem.item.track_key)
+      }
+      return galleryItem
+    }
+    view.gallery.reduce( isNewTrack, null ) // Annotate each item with galleryItem.firstOfTrack==true if first item of a track
+
+    view.gallery_by_track = d3.groups(view.gallery, d => d.item.track_key)
+
     view._emit('gallery-changed', view.gallery)
 
     this.render()
@@ -230,49 +580,141 @@ class CropGallery {
 
     //const empty_default_gallery = [{item: {}, selected:false, order:0}]
 
-    let gallery = []
-    if (this.gallery.length) {
-      gallery = this.gallery
-    } else {
-      gallery = [{item: {}, selected:false, order:0}] // Default empty gallery
-    }
+    view.group_by_track = false
+    if (view.group_by_track) {
+      // Add a container for the images in this 'track_key'
+      let track_containers = view.track_items.selectAll('.track-container')
+      .data(view.gallery_by_track, g=>g[0])
 
-    // Add a container for the images in this 'track_key'
-    view.track_items.selectAll('.item-container')
-    //.data(view.gallery, d=>d.item.new_filepath)
-    .data(gallery, d=>d.item.key)
-    .join('div')
-      .attr('class', 'item-container')
-      .style('text-align', 'center') // Center-align the content
-      .style('margin', '5px') // Add some spacing between items
-      .attr('id', d => `key-${d.item.key}`)
-      .each(function(d) {
-          const container = d3.select(this);
-  
-          // Add the image
-          container.html('')
-              .append('img')
-              .attr('class', d => `crop-img`)
-              .attr('frame_id', d.item.frame_id)
-              .attr('src', '/data/reid/images/'+d.item.new_filepath)
-              .attr('style', 'width:128px; height:128px; display:block; margin:auto;')
-              .on('click', (evt) => view.on_click_item(evt))
-  
-          // Add the frame ID below the image
-          container.append('div')
-              .attr('class', 'frame-id')
-              .html(`bee <b>${d.item.bee_id}</b>`
-                +`<br>cid <b>${d.item.color_id}</b>`
-                +`<br>K<b>${d.item.key}</b> T<b>${d.item.track_id}</b> F<b>${d.item.frame_id}</b>`
-                //+`<br>batch <b>${d.item.batch}</b>, bg <b>${d.item.background}</b>`
-                //+`<br>range <b>${d.item.bee_range}</b>, pass <b>${d.item.pass}</b>`
-                //+`<br>TC <b>${d.item.visit.nb_samples}</b>`
-                +`<br>sim <b>${(d.similarity || NaN).toFixed(5)}</b>`
-                )    // HACK: d.visit.nb_samples relies on main to insert the visit info into each detection
-              .style('margin-top', '5px') // Add spacing above the text
-              .style('font-size', '12px') // Adjust font size
-              .style('color', '#555'); // Optional: Change text color
-    });
+      track_containers.enter()
+        .append('div')
+        .attr('class', 'track-container')
+        .each(function(d) {
+          const track_div = d3.select(this);
+          track_div.append('div').text(d => d[1][0].item.track_id) // Not correct, but just test
+          track_div.append('div').attr('class','track-image-container')//.text('CROPS')
+        })
+      // No update
+      track_containers.exit().remove()
+
+      let item_containers = track_containers.select('.track-image-container')
+                                .selectAll('.item-container')
+                                .data(g => {console.log(g); return g[1]}, d => d.item.key)
+      item_containers.enter()
+        .append('div')
+        .attr('class', 'item-container')
+        .style('text-align', 'center') // Center-align the content
+        .style('margin', '5px') // Add some spacing between items
+        .attr('id', d => `key-${d.item.key}`)
+        .text('IMG')
+        .merge(item_containers)
+        .each(function(d) {
+            const container = d3.select(this);
+            const item = d.item
+
+            // Add the image
+            container.html('')
+                .append('img')
+                .attr('class', d => `crop-img`)
+                .attr('frame_id', d.item.frame_id)
+                .attr('src', '/data/reid/images/'+d.item.new_filepath)
+                .attr('style', 'width:128px; height:128px; display:block; margin:auto;')
+                .on('click', (evt) => view.on_click_item(evt))
+
+            // Add the frame ID below the image
+            container.append('div')
+                .attr('class', 'frame-id')
+                .html(
+                  `#<b>${d.item.key}</b>`
+                  +`<br>color_id <b>${item.color_id}</b>`
+                  +`<br>bee_id <b>${item.bee_id}</b>`
+                  +` <b>${item.is_bee_id_ref?'<span class="beeidflag ref">BR</span>':
+                  item.bee_id_valid=="valid"?'<span class="beeidflag valid">B+</span>':
+                  item.bee_id_valid=="outlier"?'<span class="beeidflag outlier">B-</span>':
+                  '<span class="beeidflag unknown">B?</span>'}</b>`
+                  +`<br>track_key <b>${item.track_key}</b>`
+                  +` <b>${item.is_track_ref?'<span class="trackflag ref">TR</span>':
+                    item.track_valid=="valid"?'<span class="trackflag valid">T+</span>':
+                    item.track_valid=="outlier"?'<span class="trackflag outlier">T-</span>':
+                             '<span class="trackflag unknown">T?</span>'}</b>`
+                  +`<br>frame <b>${item.frame_id}</b>`
+                  //+`<br>batch <b>${d.item.batch}</b>, bg <b>${d.item.background}</b>`
+                  //+`<br>range <b>${d.item.bee_range}</b>, pass <b>${d.item.pass}</b>`
+                  //+`<br>TC <b>${d.item.visit.nb_samples}</b>`
+                  +`<br>sim <b>${(d.similarity || NaN).toFixed(5)}</b>`
+                  )    // HACK: d.visit.nb_samples relies on main to insert the visit info into each detection
+                .style('margin-top', '5px') // Add spacing above the text
+                .style('font-size', '12px') // Adjust font size
+                .style('color', '#555'); // Optional: Change text color
+      item_containers.exit().remove()
+      });
+    } else {
+      let gallery = []
+      if (this.gallery.length) {
+        gallery = this.gallery
+      } else {
+        gallery = [{item: {}, selected:false, order:0}] // Default empty gallery
+      }
+
+      view.track_items.selectAll('.item-separator').remove()
+
+      // Add a container for the images in this 'track_key'
+      view.track_items.selectAll('.item-container')
+      //.data(view.gallery, d=>d.item.new_filepath)
+      .data(gallery, d=>d.item.key)
+      .join('div')
+        .attr('class', 'item-container')
+        .style('text-align', 'center') // Center-align the content
+        .style('margin', '5px') // Add some spacing between items
+        .attr('id', d => `key-${d.item.key}`)
+        .classed('firstOfTrack', d => d.firstOfTrack)
+        .each(function(d) {
+            const container = d3.select(this);
+            const item = d.item
+
+            if (d.firstOfTrack) {
+              //console.log('Add firstOfTrack separator for',container, d)
+              d3.select(container.node().parentNode)
+                .insert("div", function() { return container.node(); }) 
+                .attr('class', 'item-separator')
+            }
+    
+            // Add the image
+            container.html('')
+                .append('img')
+                .attr('class', d => `crop-img`)
+                .attr('frame_id', d.item.frame_id)
+                .attr('src', '/data/reid/images/'+d.item.new_filepath)
+                .attr('style', 'width:128px; height:128px; display:block; margin:auto;')
+                .on('click', (evt) => view.on_click_item(evt))
+    
+            // Add the frame ID below the image
+            container.append('div')
+                .attr('class', 'frame-id')
+                .html(
+                  `#<b>${d.item.key}</b>`
+                  +`<br>color_id <b>${item.color_id}</b>`
+                  +`<br>bee_id <b>${item.bee_id}</b>`
+                  +` <b>${item.is_bee_id_ref?'<span class="beeidflag ref">BR</span>':
+                  item.bee_id_valid=="valid"?'<span class="beeidflag valid">B+</span>':
+                  item.bee_id_valid=="outlier"?'<span class="beeidflag outlier">B-</span>':
+                  '<span class="beeidflag unknown">B?</span>'}</b>`
+                  +`<br>track_key <b>${item.track_key}</b>`
+                  +` <b>${item.is_track_ref?'<span class="trackflag ref">TR</span>':
+                    item.track_valid=="valid"?'<span class="trackflag valid">T+</span>':
+                    item.track_valid=="outlier"?'<span class="trackflag outlier">T-</span>':
+                             '<span class="trackflag unknown">T?</span>'}</b>`
+                  +`<br>frame <b>${item.frame_id}</b>`
+                  //+`<br>batch <b>${d.item.batch}</b>, bg <b>${d.item.background}</b>`
+                  //+`<br>range <b>${d.item.bee_range}</b>, pass <b>${d.item.pass}</b>`
+                  //+`<br>TC <b>${d.item.visit.nb_samples}</b>`
+                  +`<br>sim <b>${(d.similarity || NaN).toFixed(5)}</b>`
+                  )    // HACK: d.visit.nb_samples relies on main to insert the visit info into each detection
+                .style('margin-top', '5px') // Add spacing above the text
+                .style('font-size', '12px') // Adjust font size
+                .style('color', '#555'); // Optional: Change text color
+      });
+    }
     view.render_selection()
   }
   render_selection() {
@@ -424,42 +866,161 @@ class CropGallery {
     if (evt.code=='KeyL') {
       console.log('Label bee_id in gallery1 using gallery2 selection')
       //console.log(evt)
+      let current = view.scrubbed
       if (evt.shiftKey) {
         gui.details.set_bee_ids_from2() // Label all the red selections
       } else {
         gui.details.set_bee_id_from2() // Label the current blue selection
       }
-      
       evt.preventDefault();
       evt.stopPropagation()
     }
     if (evt.code=='KeyN') {
-      console.log('New bee_id in gallery1')
-      //console.log(evt)
-      gui.details.set_bee_id_new()
-      //gui.details.set_detail2( gui.details.item )
-      gui.crop_gallery2.select_item( gui.details.item )
-      evt.preventDefault();
-      evt.stopPropagation()
-    }
-    if (evt.code=='KeyT') {
-      console.log('Load whole track for current selection')
-      //console.log(evt)
-      const item = view.scrubbed.item
-      console.log(`Loading full track track_key = ${item.track_key} from item`,item)
-      view.load_track( gui.get_track_by_key(item.track_key) )
+      view.click_new_bee()
       evt.preventDefault();
       evt.stopPropagation()
     }
     if (evt.code=='KeyR') {
-      console.log('Load reference image for each track')
-      //console.log(evt)
-      view.load_track( gui.get_one_per_track() )
+      view.click_load_refs()
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='KeyT') {
+      view.click_load_selected_track()
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='KeyB') {
+      view.click_load_selected_bee_id(evt)
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='KeyE') {
+      const item = view.scrubbed.item
+      if (evt.shiftKey) {
+        console.log('Expand whole bee_id for current selection')
+        //console.log(evt)
+        if (item.bee_id) {
+          console.log(`Expanding full bee_id = ${item.bee_id} from item`,item)
+          view.load_track( gui.get_track_by_bee_id(item.bee_id).filter(d=>d.key!=item.key), true )
+        }
+      } else {
+        console.log('Expand whole track for current selection')
+        //console.log(evt)
+        console.log(`Expanding full track track_key = ${item.track_key} from item`,item)
+        view.load_track( gui.get_track_by_key(item.track_key).filter(d=>d.key!=item.key), true )
+      }
+      view.select_item( item )
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='KeyC') {
+      const item = view.scrubbed.item
+      if (evt.shiftKey) {
+        console.log('Collapse whole bee_id for current selection')
+        //console.log(evt)
+        if (item.bee_id) {
+          console.log(`Collapsing full bee_id = ${item.bee_id} from item`,item)
+          let items = view.gallery0.map( gi => gi.item ) 
+          view.load_track( items.filter( d => (d.key == item.key) || (d.bee_id != item.bee_id) ) )
+        }
+      } else {
+        console.log('Collapse whole track for current selection')
+        //console.log(evt)
+        console.log(`Expanding full track track_key = ${item.track_key} from item`,item)
+        let items = view.gallery0.map( gi => gi.item )
+        view.load_track( items.filter( d => (d.key == item.key) || (d.track_key != item.track_key) ) )
+      }
+      view.select_item( item )
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='KeyV') {
+      const item = view.scrubbed.item
+      if (evt.shiftKey) {
+        console.log('Validate purity of bee_id for visible track_keys for item',item)
+        if ( gui.tracks.filter( item => item.is_bee_id_ref ).length == 0 ) {
+          console.log('bee_id ref not visible, setting to current item')
+          item.is_bee_id_ref = true
+        } 
+        if ( view.gallery.filter( gi => gi.item.is_bee_id_ref ).length == 0 ) {
+          console.log('ABORTED: bee_id ref not visible')
+        } else {
+          console.log('Setting valid for visible items of bee_id')
+          view.gallery.filter( gi => gi.item.bee_id == item.bee_id) // for all visible items with same id
+                      .map( gi => {gi.item.bee_id_valid = 'valid'} )
+          view.render()
+          view.select_item( item )
+        }
+      } else {
+        console.log('Validate purity of track for visible track_keys for item',item)
+        if ( view.gallery.filter( gi => gi.item.is_track_ref ).length == 0 ) {
+          console.log('ABORTED: track ref not visible')
+        } else {
+          console.log('Setting valid for visible items of track')
+          view.gallery.filter( gi => gi.item.track_key == item.track_key) // for all visible items with same id
+                      .map( gi => {gi.item.track_valid = 'valid'} )
+          view.render()
+          view.select_item( item )
+        }
+      }
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='KeyU') {
+      const item = view.scrubbed.item
+      if (evt.shiftKey) {
+        console.log('Unvalidate purity of bee_id for track_keys for item',item)
+        gui.tracks.filter( d => d.bee_id == item.bee_id) // for all visible items with same id
+                    .map( d => {d.bee_id_valid = 'unknown'} )
+        view.render()
+        view.select_item( item )
+      } else {
+        console.log('Unvalidate purity of track for track_keys for item',item)
+        gui.tracks.filter( d => dtrack_key == item.track_key) // for all visible items with same id
+                    .map( d => {d.track_valid = 'unknown'} )
+        view.render()
+        view.select_item( item )
+      }
       evt.preventDefault();
       evt.stopPropagation()
     }
   };
 
+  // KeyN
+  click_new_bee() {
+    console.log('New bee_id in gallery1')
+    //console.log(evt)
+    gui.details.set_bee_id_new()
+    //gui.details.set_detail2( gui.details.item )
+    gui.crop_gallery2.select_item( gui.details.item )
+  }
+  click_load_refs() {
+    const view = this
+    console.log('Load reference image for each track')
+    //console.log(evt)
+    view.load_track( gui.get_one_per_track() )
+  }
+  click_load_selected_track() {
+    const view = this
+    console.log('Load whole track for current selection')
+    //console.log(evt)
+    const item = view.scrubbed.item
+    console.log(`Loading full track track_key = ${item.track_key} from item`,item)
+    view.load_track( gui.get_track_by_key(item.track_key) )
+  }
+  click_load_selected_bee_id(evt) {
+    const view = this
+    console.log('Load all items with bee_id for current selection')
+    //console.log(evt)
+    const item = view.scrubbed.item
+    console.log(`Loading full bee_id bee_id = ${item.bee_id} from item`,item)
+    if (evt.shiftKey)
+      view.load_track( gui.get_track_by_bee_id(item.bee_id) )
+    else
+      view.load_track( gui.get_track_by_bee_id(item.bee_id).filter( d => d.is_track_ref ) )
+  }
+  
   
   select(where, value=true) {
     const view = this
@@ -730,7 +1291,10 @@ class FeatureBand {
     this.update()
   };
   select_item(item) {
-    this.selected_idx = this.gallery_track.findIndex(d => d.item.key == item.key) // FIXME
+    if (item == null)
+      this.selected_idx == -1
+    else
+      this.selected_idx = this.gallery_track.findIndex(d => d.item.key == item.key) // FIXME
     this.render(false)
   };
   compute_similarity(gallery_item, gallery_track) {
@@ -982,6 +1546,7 @@ class TrackSplitGUI {
     }
     gui.main = d3.select(gui.config.parentElement)
     gui.tracks = _config.tracks
+    if (!gui.tracks) gui.tracks = []
 
     console.log('TrackSplitGUI tracks=',gui.tracks)
 
@@ -991,9 +1556,27 @@ class TrackSplitGUI {
     const gui = this
     const main = gui.main
 
+    gui.tableDialog = new TableDialog('Tracks Loading')
+    gui.openDialog = new LoadDataDialog('Load Data')
+
     main.html('')
-    gui.update_visits()
-    gui.create_visits_table()
+
+    let buttons_div = main.append("div")
+      .attr('id','buttons-div')
+      buttons_div.append("button")
+        .text("Open CSV data...")
+        .on('click', () => gui.openDialog.open())
+    buttons_div.append("button")
+      .text("Save")
+      .on('click', () => gui.save_to_csv())
+    buttons_div.append("div").attr('id','csv_path')
+      .text("csv_path = ?")
+    buttons_div.append("button")
+        .text("Select track to label")
+        .on('click', () => gui.tableDialog.open())
+    buttons_div.append("button")
+      .text("Hide/Show Features")
+      .on('click', function () {gui.feature_band.toogle_visibility()})
 
     const gallery_toolbar = main.append('div')
       .attr('class','toolbar')
@@ -1001,7 +1584,7 @@ class TrackSplitGUI {
     gallery_toolbar.append("button")
       .text("Load ref crops")
       .on('click', evt => {
-          let track = gui.get_one_per_track()
+          let track = gui.get_ref_per_track()
           gui.crop_gallery.load_track(track)
         } )
 
@@ -1057,91 +1640,90 @@ class TrackSplitGUI {
         gui.crop_gallery2.update()
       })
   };
-  update_visits() {
+
+  async load_csv(csv_path = '/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch2_sample_num_max.csv') {
     const gui = this
-    function agg(g) {
-      const item = g[0]
-      let start_frame = d3.min(g, d => d.frame_id )
-      let end_frame = d3.max(g, d => d.frame_id )
-      let nb_samples = g.length
-      let span_frames = end_frame-start_frame+1
-      let passes = [...new Set(g.map(d => d.pass))]
-      const visit = {
-        track_key: item['track_key'],
-        track_id: item['track_id'],
-        background: item['background'],
-        color_id: item['color_id'],
-        batch: item['batch'],
-        passes: passes,
-        bee_range: item['bee_range'],
-        environment: item['environment'],
-        crop_filename: item['new_filepath'],
-        video: item['new_filepath'].split('.')[0]+'.mp4',
-        start_frame: start_frame,
-        end_frame: end_frame,
-        span_frames: span_frames,
-        nb_samples: nb_samples,
-        sampling_ratio: nb_samples / span_frames
+    //gtracks.visits = await d3.csv('data/flowerpatch/flowerpatch_20240606_11h04.visits.csv')
+    //gtracks.tracks = await d3.csv('data/flowerpatch/flowerpatch_20240606_11h04.tracks.csv')
+    //const tracks = await d3.csv('/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch1_sample_num_max.csv')
+    let tracks = await d3.csv(csv_path)
+    gui.tracks = tracks
+    gui.csv_path = csv_path
+    gui.main.select('#csv_path').text(`csv_path = ${csv_path}`)
+
+    convert_columns_to_number(tracks, ['key','track_id','frame_id','pass'])
+    // Sanitize pass
+    const videoNameRegex = /^(.*?\.mp4)\.(track\d+)/;
+    for (let det of tracks) {
+      det['pass'] = Math.round(det['pass'])
+      // young-adults-white-blue-in-lab-65-96_batch_2.mp4.track000010.frame002815.png
+      let match = det.new_filepath.match(videoNameRegex)
+      det['video_name'] = match ? (match[1]) : 'no_video_name'
+      if (det['video_name'] == 'no_video_name') {
+        console.log(`WARNING: could not extract video_name from filepath=${det.filepath}`)
       }
-
-      // HACK!!!
-      // Plug visit into individual items
-      g.forEach(item => {
-        item.visit = visit;
-      });
-
-      return visit
+      det['track_name'] = match ? (match[1]+'.'+match[2]) : `B${det['batch']}_E${det['environment']}_b${det['background']}_P${det['pass']}_r${det['bee_range']}_T${det['track_id']}`
     }
-  
-    // CONVERT detailed tracks into high level visits
-    const nested = d3.rollup(gui.tracks, agg, d => d.track_key);
-    const flat = [];
-    for (const [track_key, item] of nested) {
-      //console.log(item)
-      item['track_key'] = track_key
-      flat.push(item);
-    }
-    gui.visits = flat
+    categories_to_indices(tracks, 'video_name', 'video_key')
+    categories_to_indices(tracks, 'track_name', 'track_key') // to avoid track_id which is video specific
+    drop_columns(tracks, ['Unnamed: 0.5','Unnamed: 0.4','Unnamed: 0.3','Unnamed: 0.2','Unnamed: 0.1','Unnamed: 0'])
+    new_column(tracks, 'bee_id', d => d.ID)
+
+    // Preselect Reference items for each track
+    let track_refs = gui.get_one_per_track()
+    gui.tracks.forEach( item => {item.is_track_ref = false; item.is_bee_id_ref = false} )
+    track_refs.forEach( item => {item.is_track_ref = true} )
+
+    //tracks = d3.sort( tracks, d => d.new_filepath ) // Do not sort to keep keys aligned
+    console.log(`load_csv: tracks loaded, ${tracks.length} rows`)
+
+    // Load defaults
+    gui.crop_gallery.load_track( gui.get_ref_per_track() )
+    gui.crop_gallery2.load_track( gui.get_ref_per_track() )
+    gui.crop_gallery.select_gallery_item( gui.crop_gallery.gallery[0] ) // Problem with async loading??
+    gui.crop_gallery2.select_gallery_item( gui.crop_gallery2.gallery[1] )
   }
-  create_visits_table() {
-      const gui = this
+  jsonToCsv(json) {
+    const keys = Object.keys(json[0]);
+    const csvRows = [
+      keys.join(","),                            // header
+      ...json.map(row => keys.map(k => JSON.stringify(row[k] ?? "")).join(",")) // rows
+    ];
+    return csvRows.join("\n");
+  }
+  downloadCSV(filename, json) {
+    const csv = this.jsonToCsv(json);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+  
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.style.display = "none";
+  
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+  getFormattedTimestamp() {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+  
+    const year = String(now.getFullYear()); // YYYY
+    const month = pad(now.getMonth() + 1);           // MM
+    const day = pad(now.getDate());                  // DD
+    const hours = pad(now.getHours());               // hh
+    const minutes = pad(now.getMinutes());           // mm
+    const seconds = pad(now.getSeconds());           // ss
+  
+    return `${year}${month}${day}_${hours}${minutes}${seconds}`;
+  }
+  save_to_csv() {
+    const filename = this.csv_path.split("/").pop(); // "myfile.txt"
+    const nameWithoutExt = filename.replace(/\.csv$/i, "");
+    const timestamp = this.getFormattedTimestamp()
+    this.downloadCSV(nameWithoutExt+'.labeled.'+timestamp+'.csv', gui.tracks)
+  }
 
-      // TABLE
-      let buttons_div = gui.main
-        .append("div")
-          .attr('id','buttons-div')
-      buttons_div.append("button")
-        .text("Hide/Show Table")
-        .on('click', () => d3.select("#table-div")
-                            .style("display",
-                                    () => d3.select("#table-div").style("display") === "none" ? "block" : "none")
-            )
-      buttons_div.append("button")
-        .text("Hide/Show Features")
-        .on('click', function () {gui.feature_band.toogle_visibility()})
-      
-    let top_div = gui.main
-      .append('div').attr('id','top-div')
-
-    top_div.append("div")
-      .attr('id','table-div')
-      .style("max-height","300px")
-      .style("overflow-y","scroll")
-      .style("overflow-x","scroll")
-      .style("width","50%")
-    create_table(gui.visits, ['track_key', 'track_id', 'color_id', 'background', 'batch', 'bee_range', 'passes', 'start_frame','end_frame', 'span_frames', 'nb_samples', 'sampling_ratio'], '#table-div')
-
-    gui.main.select('#table-div > table > tbody')
-      .selectAll('tr>td.col_track_key')
-      .html('')
-      .append('a')
-        .attr('href','#')
-        .text(d => d.track_key)
-        .on('click',(evt, d) => gui.load_track_key( d.track_key ))
-      // .html(function(d) {
-      //   return `<a href="#" onclick="select_track('${d.track_key}')">${d.track_key}</a>`
-      // })
-  };
   load_track_key(track_key, append=false) {
     const gui = this
     console.log(`load_track_key(${track_key})`)
@@ -1169,12 +1751,20 @@ class TrackSplitGUI {
   }
   get_track_by_key(track_key) {
     const gui = this
-    console.log(`load_track_key(${track_key})`)
+    console.log(`get_track_by_key(${track_key})`)
   
     let track = gui.tracks.filter(det => det.track_key == track_key)
     return track
   }
+  get_track_by_bee_id(bee_id) {
+    const gui = this
+    console.log(`get_track_by_bee_id(${bee_id})`)
+  
+    let track = gui.tracks.filter(det => det.bee_id == bee_id)
+    return track
+  }
   get_one_per_track() {
+    const gui = this
     function getMiddleDetections(tracks) {
       // Group by track_id using d3.group
       const grouped = d3.group(tracks, d => 'K'+d.color_id+'_'+d.track_id+'_'+d.batch+'_'+d.pass+'_'+d.environment+'_'+d.bee_range+'_'+d.background);
@@ -1188,6 +1778,10 @@ class TrackSplitGUI {
       return Array.from(grouped.values(), middle_of_group);
     }
     let track = getMiddleDetections(gui.tracks)
+    return track
+  }
+  get_ref_per_track() {
+    let track = gui.tracks.filter( item => item.is_track_ref )
     return track
   }
   get_bee_id_new() {
@@ -1230,9 +1824,29 @@ class TrackSplitGUI {
 
     let track_key = item.track_key
     let bee_id = item.bee_id
-    let source = 'track_from_key='+item.key
+    let source = 'track_prop,key='+item.key
     gui.tracks.filter( d => d.track_key == track_key).forEach( item =>  set_bee_id(item, bee_id, source))
 
+    this.crop_gallery.update()
+    this.crop_gallery2.update()
+    this.details.render()
+  }
+
+  propagate_bee_id_validation_to_tracks(items) {
+
+    function set_bee_id(item, bee_id, source="manual") { // Set bee_id for item
+      if ((item.bee_id_orig == null) && (item.bee_id != null)) // In case we started with initial ids, keep them as backup
+        item.bee_id_orig = item.bee_id // Save original value (but do not overwrite if multiple edits). FIXME: proper undo stack
+      item.bee_id = bee_id
+      item.bee_id_src = source
+    }
+
+    track_keys = [...Set(items.map( item => item.track_key ))]
+
+    track_keys.forEach( track_key => {
+      let source = 'track_prop,key='+item.key
+      gui.tracks.filter( d => d.track_key == track_key).forEach( item =>  set_bee_id(item, bee_id, source))
+    })
     this.crop_gallery.update()
     this.crop_gallery2.update()
     this.details.render()

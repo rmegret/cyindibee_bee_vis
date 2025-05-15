@@ -88,19 +88,20 @@ function throttleTrailing(fn, interval) {
 }
 
 function scrollToCenter(container, target, scrollBehavior = "smooth") {
-  const containerRect = container.getBoundingClientRect();
-  const targetRect = target.getBoundingClientRect();
+  // const containerRect = container.getBoundingClientRect();
+  // const targetRect = target.getBoundingClientRect();
 
-  const scrollLeft = container.scrollLeft + 
-    (targetRect.left + targetRect.width / 2) - 
-    (containerRect.left + containerRect.width / 2);
+  // const scrollLeft = container.scrollLeft + 
+  //   (targetRect.left + targetRect.width / 2) - 
+  //   (containerRect.left + containerRect.width / 2);
 
-  const scrollTop = container.scrollTop + 
-    (targetRect.top + targetRect.height / 2) - 
-    (containerRect.top + containerRect.height / 2);
+  // const scrollTop = container.scrollTop + 
+  //   (targetRect.top + targetRect.height / 2) - 
+  //   (containerRect.top + containerRect.height / 2);
 
-  container.scrollTo({ left: scrollLeft, top: scrollTop, 
-                        behavior: scrollBehavior });
+  // container.scrollTo({ left: scrollLeft, top: scrollTop, 
+  //                       behavior: scrollBehavior });
+  target.scrollIntoView({ behavior: "instant", block: "center", inline: "center" })
 }
 throttledScrollToCenter = throttleTrailing(scrollToCenter, 100)
 
@@ -447,6 +448,14 @@ class CropGallery {
     view.gallery = [];
     view.filter = null
     //view.collapse = null
+    view.dataset_query = {
+          scope: {},  // {label:'track_key',value:34} or {label:'bee_id',value:17}
+          filter_ref: {label:'track_key'},  // or 'bee_id' or {}
+          filter_label: {},  // {label:'bee_id',value:true} or {label:'bee_id',value:false}
+          order: {by:['track_key','frame_id'],asc:true}, 
+          // or {by:['bee_id','track_key','frame_id'],asc:true} or {by:['similarity'],asc:false,ref_item:item}
+          limit: 'nolimit', // max number of samples
+        }
 
     view.scrubbed = undefined
     view.selected = {} // Mapping (item) => bool
@@ -478,6 +487,10 @@ class CropGallery {
         .attr('class','buttons-div flex-container')
         .style('display', view.config.showToolbar?'block':'none');
 
+    const dataset_div = container.append("div")
+        .attr('class','dataset-div flex-container')
+    view.dataset_div = dataset_div
+
     const divleft = buttons_div_select.append('div').attr('class','flex-left')
     divleft.append("button").text("Select BEFORE")
       .on('click', () => view.select('before'))
@@ -503,16 +516,144 @@ class CropGallery {
 
     const track_items = view.track_div.append('div')
       .attr('class', 'track-items')
-      .style('display', 'flex') // Use flexbox for horizontal layout
-      .style('flex-wrap', 'nowrap') // Prevent wrapping of images
-      .style('overflow-x', 'auto') // Add horizontal scrollbar if needed
-      .style('white-space', 'nowrap') // Ensure images stay on one line
     view.track_items = track_items
 
     track_items.on('keydown', (evt) => view.onkeypress(evt))
         .attr("tabindex", "1")
 
     console.log("crop_list_view initialized");
+  }
+
+  add_popup(trigger, items, cb) {
+    const popup = d3.select('body').append('div')
+            .attr('id','popup')
+            .style('position','absolute')
+            .style('display','none')
+            .style('background','white')
+            .style('border','1px solid #ccc')
+            .style('box-shadow','0 2px 6px rgba(0,0,0,0.2)')
+            .style('z-index',1000)
+            .node() //.getElementById('popup');
+
+    function _cb(item, idx) {
+      console.log("Selected:", idx, item);
+      cb(item,idx)
+    }
+
+    // Show popup on trigger click
+    trigger.addEventListener('click', (e) => {
+      // Position the popup near the trigger
+      const rect = trigger.getBoundingClientRect();
+      popup.style.left = rect.left + 'px';
+      popup.style.top = rect.bottom + 'px';
+
+      // Clear and populate popup
+      popup.innerHTML = '';
+      items.forEach( (item, idx) => {
+        const el = document.createElement('div');
+        el.textContent = item;
+        el.index = idx
+        el.style.padding = '6px 12px';
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', () => {
+          popup.style.display = 'none';
+          _cb(item, idx);
+        });
+        el.addEventListener('mouseenter', () => el.style.background = '#eee');
+        el.addEventListener('mouseleave', () => el.style.background = 'white');
+        popup.appendChild(el);
+      });
+
+      popup.style.display = 'block';
+    });
+
+    // Hide popup on outside click  // FIXME: need this global
+    document.addEventListener('click', (e) => {
+      if (!popup.contains(e.target) && !trigger.contains(e.target)) {
+        popup.style.display = 'none';
+      }
+    });
+  }
+
+  refresh_dataset_buttons() {
+    const view = this
+    const dataset_div = view.dataset_div
+    const dataset_query = view.dataset_query
+
+    dataset_div.html('')
+
+    if (dataset_query.scope.label == null) {
+      dataset_div.append('div').attr('class','dataset-button button-scope').html('Whole dataset')
+    } else if (dataset_query.scope.label == 'track_key') {
+      dataset_div.append('div').attr('class','dataset-button button-scope').html('track_key='+dataset_query.scope.value)
+    } else if (dataset_query.scope.label == 'bee_id') {
+      dataset_div.append('div').attr('class','dataset-button button-scope').html('bee_id='+dataset_query.scope.value)
+    }
+    this.add_popup(dataset_div.select('.button-scope').node(), 
+        ['Whole dataset','Select track_key','Select bee_id'], 
+        (item,idx) => {
+          console.log(item,idx)
+          if (item=='Whole dataset') dataset_query.scope={}
+          if (item=='Select track_key') {
+            const value = prompt("Enter a track_key:");
+            console.log(value)
+            if (value == null) return;
+            view.dataset_query.scope={label:'track_key',value:Number(value)}
+          }
+          if (item=='Select bee_id') {
+            const value = prompt("Enter a bee_id:");
+            console.log(value)
+            if (value == null) return;
+            view.dataset_query.scope={label:'bee_id',value:Number(value)}
+          }
+          view.refresh_dataset_buttons()
+        })
+    dataset_div.select('.button-scope').on('click')
+
+    if (dataset_query.filter_ref.label == null) {
+      dataset_div.append('div').attr('class','dataset-button button-filter-ref').html('All frames')
+    } else if (dataset_query.filter_ref.label == 'track_key') {
+      dataset_div.append('div').attr('class','dataset-button button-filter-ref').html('Only track reference')
+    } else if (dataset_query.filter_ref.label == 'bee_id') {
+      dataset_div.append('div').attr('class','dataset-button button-filter-ref').html('Only bee_id reference')
+    }
+    this.add_popup(dataset_div.select('.button-filter-ref').node(), 
+        ['All frames','Only track ref','Only bee_id ref'], 
+        (item,idx) => {
+          console.log(item,idx)
+          if (item=='All frames') dataset_query.filter_ref={}
+          if (item=='Only track ref') {
+            view.dataset_query.filter_ref={label:'track_key',value:true}
+          }
+          if (item=='Only bee_id ref') {
+            view.dataset_query.filter_ref={label:'bee_id',value:true}
+          }
+          view.refresh_dataset_buttons()
+        })
+    dataset_div.select('.button-scope').on('click')
+
+    if (dataset_query.filter_label.label == null) {
+      dataset_div.append('div').attr('class','dataset-button button-filter-label').html('All labels')
+    } else if (dataset_query.filter_label.label == 'bee_id') {
+      if (dataset_query.filter_label.value)
+        dataset_div.append('div').attr('class','dataset-button button-filter-label').html('Has bee_id')
+      else
+        dataset_div.append('div').attr('class','dataset-button button-filter-label').html('Has no bee_id')
+    }
+
+    if (dataset_query.order.by == null) {
+      dataset_div.append('div').attr('class','dataset-button button-order').html('Custom order')
+    } else if ( Array.isArray(dataset_query.order.by) ) {
+      let asc = dataset_query.order.asc
+      if (!Array.isArray(asc)) {
+        asc = dataset_query.order.by.map( d => asc ) // Duplicate to fit order length
+      }
+      let order = dataset_query.order.by.map( (d,i) => d+(asc[i]?'⇧':'⇩') ).join('/')
+      dataset_div.append('div').attr('class','dataset-button button-order')
+          .html('order='+order)
+    }
+
+    dataset_div.append('div').attr('class','dataset-button button-limit').html('limit='+dataset_query.limit)
   }
   load_track(track, append=false) {
     if (append)
@@ -525,11 +666,13 @@ class CropGallery {
   reorder(mode, similarity) {
     const view = this
     if (mode == undefined)
+      //view.gallery0 = view.track.map( (item, index) => ({item:item, selected:false, order:item.new_filepath}) )
       view.gallery0 = view.track.map( (item, index) => ({item:item, selected:false, order:item.new_filepath}) )
     if (mode == 'similarity') {
       view.gallery0 = view.gallery0.map( (gallery_item, index) => ({item:gallery_item.item, selected:false, similarity:similarity[index], order: -similarity[index]}) )
+      view.gallery0 = d3.sort(view.gallery0, x => x.order)
     }
-    view.gallery0 = d3.sort(view.gallery0, x => x.order)
+    
     view.update()
     //view.select_gallery_item(view.gallery[0])
   }
@@ -545,6 +688,8 @@ class CropGallery {
     //view.track.forEach( (item) => view.selected.set(item, false) );
     
     // Pipeline: gallery0 => filter => sort => gallery
+    
+    this.refresh_dataset_buttons()
 
     let tmp_gallery = view.gallery0
 
@@ -569,6 +714,19 @@ class CropGallery {
     }
     view.gallery.reduce( isNewTrack, null ) // Annotate each item with galleryItem.firstOfTrack==true if first item of a track
 
+    function isNewBeeId(previousGalleryItem, galleryItem) {
+      //console.log('isNewTrack',previousGalleryItem, galleryItem)
+      if (!previousGalleryItem) {
+        //console.log('!previousGalleryItem')
+        galleryItem.firstOfBeeId = true
+      } else {
+        //console.log('previousGalleryItem')
+        galleryItem.firstOfBeeId = (galleryItem.item.bee_id != previousGalleryItem.item.bee_id)
+      }
+      return galleryItem
+    }
+    view.gallery.reduce( isNewBeeId, null ) // Annotate each item with galleryItem.firstOfTrack==true if first item of a track
+
     view.gallery_by_track = d3.groups(view.gallery, d => d.item.track_key)
 
     view._emit('gallery-changed', view.gallery)
@@ -579,6 +737,19 @@ class CropGallery {
     const view = this
 
     //const empty_default_gallery = [{item: {}, selected:false, order:0}]
+
+
+    const bee_id_valid_string = function(item) {
+      const R = item.is_bee_id_ref   // Ref vs no ref
+      const V = item.bee_id_valid == 'valid'  // valid vs unknown
+      return `<span class="beeidflag${V?" valid":""}">${R?"R":"_"}</span></b>`
+    }
+    const track_valid_string = function(item) {
+      const R = item.is_track_ref   // Ref vs no ref
+      const V = item.track_valid == 'valid'  // valid vs unknown
+      return `<span class="trackflag${V?" valid":""}">${R?"R":"_"}</span></b>`
+    }
+
 
     view.group_by_track = false
     if (view.group_by_track) {
@@ -595,7 +766,7 @@ class CropGallery {
           track_div.append('div').attr('class','track-image-container')//.text('CROPS')
         })
       // No update
-      track_containers.exit().remove()
+      track_containers.exit().remove()      
 
       let item_containers = track_containers.select('.track-image-container')
                                 .selectAll('.item-container')
@@ -612,8 +783,10 @@ class CropGallery {
             const container = d3.select(this);
             const item = d.item
 
+            const container2 = container.append('div').attr('id','crop-div')
+
             // Add the image
-            container.html('')
+            container2.html('')
                 .append('img')
                 .attr('class', d => `crop-img`)
                 .attr('frame_id', d.item.frame_id)
@@ -622,21 +795,15 @@ class CropGallery {
                 .on('click', (evt) => view.on_click_item(evt))
 
             // Add the frame ID below the image
-            container.append('div')
+            container2.append('div')
                 .attr('class', 'frame-id')
                 .html(
                   `#<b>${d.item.key}</b>`
                   +`<br>color_id <b>${item.color_id}</b>`
                   +`<br>bee_id <b>${item.bee_id}</b>`
-                  +` <b>${item.is_bee_id_ref?'<span class="beeidflag ref">BR</span>':
-                  item.bee_id_valid=="valid"?'<span class="beeidflag valid">B+</span>':
-                  item.bee_id_valid=="outlier"?'<span class="beeidflag outlier">B-</span>':
-                  '<span class="beeidflag unknown">B?</span>'}</b>`
+                  +` <b>${bee_id_valid_string(item)}</b>`
                   +`<br>track_key <b>${item.track_key}</b>`
-                  +` <b>${item.is_track_ref?'<span class="trackflag ref">TR</span>':
-                    item.track_valid=="valid"?'<span class="trackflag valid">T+</span>':
-                    item.track_valid=="outlier"?'<span class="trackflag outlier">T-</span>':
-                             '<span class="trackflag unknown">T?</span>'}</b>`
+                  +` <b>${track_valid_string(item)}</b>`
                   +`<br>frame <b>${item.frame_id}</b>`
                   //+`<br>batch <b>${d.item.batch}</b>, bg <b>${d.item.background}</b>`
                   //+`<br>range <b>${d.item.bee_range}</b>, pass <b>${d.item.pass}</b>`
@@ -671,16 +838,27 @@ class CropGallery {
         .each(function(d) {
             const container = d3.select(this);
             const item = d.item
-
-            if (d.firstOfTrack) {
-              //console.log('Add firstOfTrack separator for',container, d)
-              d3.select(container.node().parentNode)
-                .insert("div", function() { return container.node(); }) 
-                .attr('class', 'item-separator')
-            }
     
             // Add the image
             container.html('')
+
+            if (d.firstOfBeeId) {
+              //console.log('Add firstOfTrack separator for',container, d)
+              //d3.select(container.node().parentNode)
+              //  .insert("div", function() { return container.node(); }) 
+              container.append('div')
+                .attr('class', 'item-separator bee_id')
+            }
+            if (!d.firstOfBeeId && d.firstOfTrack) {
+              //console.log('Add firstOfTrack separator for',container, d)
+              // d3.select(container.node().parentNode)
+              //   .insert("div", function() { return container.node(); }) 
+              container.append('div')
+                .attr('class', 'item-separator track_key')
+            }
+
+            const container2 = container.append('div').attr('id','crop-div')
+            container2
                 .append('img')
                 .attr('class', d => `crop-img`)
                 .attr('frame_id', d.item.frame_id)
@@ -689,21 +867,15 @@ class CropGallery {
                 .on('click', (evt) => view.on_click_item(evt))
     
             // Add the frame ID below the image
-            container.append('div')
+            container2.append('div')
                 .attr('class', 'frame-id')
                 .html(
                   `#<b>${d.item.key}</b>`
                   +`<br>color_id <b>${item.color_id}</b>`
                   +`<br>bee_id <b>${item.bee_id}</b>`
-                  +` <b>${item.is_bee_id_ref?'<span class="beeidflag ref">BR</span>':
-                  item.bee_id_valid=="valid"?'<span class="beeidflag valid">B+</span>':
-                  item.bee_id_valid=="outlier"?'<span class="beeidflag outlier">B-</span>':
-                  '<span class="beeidflag unknown">B?</span>'}</b>`
+                  +` <b>${bee_id_valid_string(item)}</b>`
                   +`<br>track_key <b>${item.track_key}</b>`
-                  +` <b>${item.is_track_ref?'<span class="trackflag ref">TR</span>':
-                    item.track_valid=="valid"?'<span class="trackflag valid">T+</span>':
-                    item.track_valid=="outlier"?'<span class="trackflag outlier">T-</span>':
-                             '<span class="trackflag unknown">T?</span>'}</b>`
+                  +` <b>${track_valid_string(item)}</b>`
                   +`<br>frame <b>${item.frame_id}</b>`
                   //+`<br>batch <b>${d.item.batch}</b>, bg <b>${d.item.background}</b>`
                   //+`<br>range <b>${d.item.bee_range}</b>, pass <b>${d.item.pass}</b>`
@@ -826,6 +998,13 @@ class CropGallery {
       evt.preventDefault();
       evt.stopPropagation()
     }
+    if (evt.code=='Digit0') {
+      console.log('Expand/Collapse track view')
+      view.track_items
+         .classed('expand', !view.track_items.classed('expand'))
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
     if (evt.code=='ArrowRight') {
       //console.log(evt)
       let elts = view.gallery.filter(det => det.order > view.scrubbed.order)
@@ -841,6 +1020,28 @@ class CropGallery {
       if (elts.length==0) {console.log('Already at end, ABORT'); return}
       let new_item = elts[elts.length-1]
       view.select_gallery_item(new_item, true)
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='ArrowUp') {
+      const item = view.scrubbed.item
+      const div = view.track_items.select(`div#key-${item.key}`).node()
+      const div2 = view.getDivAbove(div)
+      console.log(div2)
+      const new_gallery_item = div2.__data__ // a gallery item
+      console.log('new_gallery_item',new_gallery_item)
+      view.select_gallery_item(new_gallery_item, true)
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='ArrowDown') {
+      const item = view.scrubbed.item
+      const div = view.track_items.select(`div#key-${item.key}`).node()
+      const div2 = view.getDivBelow(div)
+      console.log(div2)
+      const new_gallery_item = div2.__data__ // a gallery item
+      console.log('new_gallery_item',new_gallery_item)
+      view.select_gallery_item(new_gallery_item, true)
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -881,7 +1082,7 @@ class CropGallery {
       evt.stopPropagation()
     }
     if (evt.code=='KeyR') {
-      view.click_load_refs()
+      view.click_load_refs(evt)
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -898,17 +1099,19 @@ class CropGallery {
     if (evt.code=='KeyE') {
       const item = view.scrubbed.item
       if (evt.shiftKey) {
-        console.log('Expand whole bee_id for current selection')
+        //console.log('Expand whole bee_id for current selection')
+        console.log('Expand whole bee_id for currently visible')
         //console.log(evt)
         if (item.bee_id) {
           console.log(`Expanding full bee_id = ${item.bee_id} from item`,item)
-          view.load_track( gui.get_track_by_bee_id(item.bee_id).filter(d=>d.key!=item.key), true )
+          //view.load_track( gui.get_track_by_bee_id(item.bee_id).filter(d=>d.key!=item.key), true )
+          view.load_track( gui.get_track_by_bee_id(item.bee_id), true )
         }
       } else {
         console.log('Expand whole track for current selection')
         //console.log(evt)
         console.log(`Expanding full track track_key = ${item.track_key} from item`,item)
-        view.load_track( gui.get_track_by_key(item.track_key).filter(d=>d.key!=item.key), true )
+        view.load_track( gui.get_track_by_key(item.track_key), true )
       }
       view.select_item( item )
       evt.preventDefault();
@@ -917,19 +1120,23 @@ class CropGallery {
     if (evt.code=='KeyC') {
       const item = view.scrubbed.item
       if (evt.shiftKey) {
-        console.log('Collapse whole bee_id for current selection')
+        //console.log('Collapse whole bee_id for current visible')
         //console.log(evt)
-        if (item.bee_id) {
-          console.log(`Collapsing full bee_id = ${item.bee_id} from item`,item)
+        console.log('Collapse to bee_id ref')
+        //if (item.bee_id) {
+          //console.log(`Collapsing full bee_id = ${item.bee_id} from item`,item)
           let items = view.gallery0.map( gi => gi.item ) 
-          view.load_track( items.filter( d => (d.key == item.key) || (d.bee_id != item.bee_id) ) )
-        }
+          //let bee_ids = items.map( d => d.bee_id )
+          //view.load_track( items.filter( d => (d.key == item.key) || (d.bee_id != item.bee_id) ) )
+          view.load_track( items.filter( d => (d.is_bee_id_ref) || (d.bee_id == null) ) )
+        //}
       } else {
-        console.log('Collapse whole track for current selection')
+        //console.log('Collapse whole track for current selection')
         //console.log(evt)
-        console.log(`Expanding full track track_key = ${item.track_key} from item`,item)
+        console.log(`Collapse to track ref`)
         let items = view.gallery0.map( gi => gi.item )
-        view.load_track( items.filter( d => (d.key == item.key) || (d.track_key != item.track_key) ) )
+        //view.load_track( items.filter( d => (d.key == item.key) || (d.track_key != item.track_key) ) )
+        view.load_track( items.filter( d => (d.is_track_ref) || ((d.track_key==null)) ) )
       }
       view.select_item( item )
       evt.preventDefault();
@@ -977,7 +1184,7 @@ class CropGallery {
         view.select_item( item )
       } else {
         console.log('Unvalidate purity of track for track_keys for item',item)
-        gui.tracks.filter( d => dtrack_key == item.track_key) // for all visible items with same id
+        gui.tracks.filter( d => d.track_key == item.track_key) // for all visible items with same id
                     .map( d => {d.track_valid = 'unknown'} )
         view.render()
         view.select_item( item )
@@ -995,11 +1202,17 @@ class CropGallery {
     //gui.details.set_detail2( gui.details.item )
     gui.crop_gallery2.select_item( gui.details.item )
   }
-  click_load_refs() {
+  click_load_refs(evt) {
     const view = this
-    console.log('Load reference image for each track')
-    //console.log(evt)
-    view.load_track( gui.get_one_per_track() )
+    if (evt.shiftKey) {
+      console.log('Load reference image for each bee_id')
+      //console.log(evt)
+      view.load_track( gui.get_one_per_bee_id() )
+    } else {
+      console.log('Load reference image for each track')
+      //console.log(evt)
+      view.load_track( gui.get_one_per_track() )
+    }
   }
   click_load_selected_track() {
     const view = this
@@ -1008,6 +1221,7 @@ class CropGallery {
     const item = view.scrubbed.item
     console.log(`Loading full track track_key = ${item.track_key} from item`,item)
     view.load_track( gui.get_track_by_key(item.track_key) )
+    view.select_item( item )
   }
   click_load_selected_bee_id(evt) {
     const view = this
@@ -1019,8 +1233,68 @@ class CropGallery {
       view.load_track( gui.get_track_by_bee_id(item.bee_id) )
     else
       view.load_track( gui.get_track_by_bee_id(item.bee_id).filter( d => d.is_track_ref ) )
+    view.select_item( item )
   }
   
+
+  getDivAbove(currentDiv) {
+    const rect = currentDiv.getBoundingClientRect();
+    const currentBottom = rect.bottom;
+  
+    const siblings = Array.from(currentDiv.parentNode.children);
+    let bestMatch = null;
+    let minVerticalGap = Infinity;
+  
+    for (const sibling of siblings) {
+      if (sibling === currentDiv) continue;
+  
+      const sibRect = sibling.getBoundingClientRect();
+  
+      const isAbove = sibRect.top < rect.top; // visually higher
+      const horizontallyOverlaps =
+        sibRect.left < rect.right && sibRect.right > rect.left;
+  
+      if (isAbove && horizontallyOverlaps) {
+        const verticalGap = rect.top - sibRect.bottom;
+  
+        if (verticalGap >= 0 && verticalGap < minVerticalGap) {
+          minVerticalGap = verticalGap;
+          bestMatch = sibling;
+        }
+      }
+    }
+  
+    return bestMatch;
+  }
+  getDivBelow(currentDiv) {
+    const rect = currentDiv.getBoundingClientRect();
+    const currentBottom = rect.bottom;
+  
+    const siblings = Array.from(currentDiv.parentNode.children);
+    let bestMatch = null;
+    let minVerticalGap = Infinity;
+  
+    for (const sibling of siblings) {
+      if (sibling === currentDiv) continue;
+  
+      const sibRect = sibling.getBoundingClientRect();
+  
+      const isBelow = sibRect.top > rect.top; // visually lower
+      const horizontallyOverlaps =
+        sibRect.left < rect.right && sibRect.right > rect.left;
+  
+      if (isBelow && horizontallyOverlaps) {
+        const verticalGap = sibRect.top - rect.bottom;
+  
+        if (verticalGap >= 0 && verticalGap < minVerticalGap) {
+          minVerticalGap = verticalGap;
+          bestMatch = sibling;
+        }
+      }
+    }
+  
+    return bestMatch;
+  }
   
   select(where, value=true) {
     const view = this
@@ -1673,6 +1947,8 @@ class TrackSplitGUI {
     let track_refs = gui.get_one_per_track()
     gui.tracks.forEach( item => {item.is_track_ref = false; item.is_bee_id_ref = false} )
     track_refs.forEach( item => {item.is_track_ref = true} )
+    let bee_id_refs = gui.get_one_per_bee_id()
+    bee_id_refs.forEach( item => {item.is_bee_id_ref = true} )
 
     //tracks = d3.sort( tracks, d => d.new_filepath ) // Do not sort to keep keys aligned
     console.log(`load_csv: tracks loaded, ${tracks.length} rows`)
@@ -1767,7 +2043,8 @@ class TrackSplitGUI {
     const gui = this
     function getMiddleDetections(tracks) {
       // Group by track_id using d3.group
-      const grouped = d3.group(tracks, d => 'K'+d.color_id+'_'+d.track_id+'_'+d.batch+'_'+d.pass+'_'+d.environment+'_'+d.bee_range+'_'+d.background);
+      const grouped = d3.group(tracks, d => d.track_key );
+        //'K'+d.color_id+'_'+d.track_id+'_'+d.batch+'_'+d.pass+'_'+d.environment+'_'+d.bee_range+'_'+d.background);
     
       const middle_of_group = (group) => {
             const middleIndex = Math.floor(group.length / 2);
@@ -1778,6 +2055,25 @@ class TrackSplitGUI {
       return Array.from(grouped.values(), middle_of_group);
     }
     let track = getMiddleDetections(gui.tracks)
+    return track
+  }
+  get_one_per_bee_id() {
+    const gui = this
+    function getMiddleDetections(tracks) {
+      // Group by track_id using d3.group
+      const grouped = d3.group(tracks, d => d.bee_id);
+    
+      const middle_of_group = (group) => {
+            const middleIndex = Math.floor(group.length / 2);
+            return group[middleIndex];
+          }
+
+      // Get the middle item from each group
+      return Array.from(grouped.values(), middle_of_group);
+    }
+    let tracks = gui.tracks.filter( d => d.is_track_ref )
+    let track = getMiddleDetections(tracks)
+    track = track.filter( d => d.bee_id != null )
     return track
   }
   get_ref_per_track() {

@@ -2826,7 +2826,8 @@ class TrackSplitGUI {
     gui.hard_refresh()
   }
   jsonToCsv(json) {
-    const keys = Object.keys(json[0]);
+    //const keys = Object.keys(json[0]);
+    const keys = [...new Set(json.flatMap(Object.keys))];
     const csvRows = [
       keys.join(","),                            // header
       ...json.map(row => keys.map(k => JSON.stringify(row[k] ?? "")).join(",")) // rows

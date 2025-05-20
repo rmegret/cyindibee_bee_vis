@@ -22,10 +22,19 @@ async function show_track_util() {
                           })
   
   //gui.load_csv('/data/flowerpatch/flowerpatch_20240606_11h04.tracks.csv')
-  gui.load_csv('/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch2_sample_num_max.csv')
-  gui.feature_band.load_features('/data/reid/batch_1_train_embeddings_26w82ua9.csv')
+  //gui.load_csv('/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch2_sample_num_max.csv')
+  //gui.feature_band.load_features('/data/reid/batch_1_train_embeddings_26w82ua9.csv')
+
+  gui.load_dataset_json('/data/flowerpatch/flowerpatch_20240606_11h04.crops_dataset.json')
+  //gui.load_dataset_json('/data/reid/reid.crops_dataset.json')
 }
 
+
+function joinPaths(a, b) {
+  if (a.endsWith('/')) a = a.slice(0, -1);
+  if (b.startsWith('/')) b = b.slice(1);
+  return a + '/' + b;
+}
 
 function categories_to_indices(data, category_field, index_field) {
   // Create a field `index_field` out of `category_field` in the table data
@@ -148,7 +157,7 @@ class LoadDataDialog {
         <button id="dialog-close" class='flex-left'>Close</button>
       </div>
       <div id="dialog-toolbar" class='flex-container'>
-        <select id="csvSelector"></select>
+        <select id="selector"></select>
         <button id="loadButton">Load</button>
       </div>
       <div id="dialog-content">
@@ -162,7 +171,7 @@ class LoadDataDialog {
     this.node.querySelector('#loadButton').addEventListener('click', () => dialog.load_button_click());
     this.contentD3 = d3.select(this.node.querySelector('#dialog-content'))
 
-    this.selector = this.node.querySelector('#csvSelector');
+    this.selector = this.node.querySelector('#selector');
     this.output = this.node.querySelector('#csvOutput');
     this.outputDebug = this.node.querySelector('#csvOutputDebug');
   }
@@ -180,10 +189,12 @@ class LoadDataDialog {
 
     const P = (async () => {
       // Search in 'datasets/' directory
-      dialog.outputDebug.textContent = `Looking for CSV files in ${dataset_root}`
-      const csvFiles = await dialog.findCSVFiles(dataset_root);
+      //dialog.outputDebug.textContent = `Looking for CSV files in ${dataset_root}`
+      //const files = await dialog.findCSVFiles(dataset_root);
+      dialog.outputDebug.textContent = `Looking for JSON files in ${dataset_root}`
+      const files = await dialog.findJSONFiles(dataset_root);
 
-      csvFiles.forEach(path => {
+      files.forEach(path => {
           const option = document.createElement('option');
           option.value = path;
           option.textContent = path;
@@ -192,15 +203,16 @@ class LoadDataDialog {
 
       selector.addEventListener('change', async () => {
           const selected = selector.value;
-          const csvText = await fetch(selected).then(res => res.text());
-          output.textContent = csvText;
+          const textContent = await fetch(selected).then(res => res.text());
+          output.textContent = textContent;
       });
     })().then(() => console.log('LOADING DONE'))
     
   };
   load_button_click() {
-    const csv_path = this.selector.value;
-    gui.load_csv(csv_path)
+    const file_path = this.selector.value;
+    //gui.load_csv(file_path)
+    gui.load_dataset_json(file_path)
     this.close()
   }
   async fetchAndParseDirectory(url) {
@@ -238,6 +250,32 @@ class LoadDataDialog {
       }
 
       return csvPaths;
+  }
+  async findJSONFiles(basePath, patternFn = path => path.endsWith('.json')) {
+      const dialog = this
+      const queue = [basePath];
+      const paths = [];
+
+      while (queue.length > 0) {
+          const current = queue.pop();
+          const fullUrl = new URL(current, window.location.origin).href;
+          
+          dialog.outputDebug.textContent += `\nVisiting ${fullUrl}`;
+
+          const entries = await this.fetchAndParseDirectory(fullUrl);
+
+          for (const entry of entries) {
+              const fullPath = current + entry;
+              if (entry.endsWith('/')) {
+                  // It's a subdirectory
+                  queue.push(fullPath);
+              } else if (patternFn(fullPath)) {
+                  paths.push(fullPath);
+              }
+          }
+      }
+
+      return paths;
   }
 }
 
@@ -600,7 +638,7 @@ class CropGallery {
           if (idx==4) view.select('all', true)
           if (idx==5) view.select('all', false)
           if (idx==6) view.select('invert')
-          view.update()
+          //view.update()
         })
 
     const buttons_div_select = container.append("div")
@@ -1390,9 +1428,11 @@ class CropGallery {
       const div = view.track_items.select(`div#key-${item.key}`).node()
       const div2 = view.getDivAbove(div)
       console.log(div2)
-      const new_gallery_item = div2.__data__ // a gallery item
-      console.log('new_gallery_item',new_gallery_item)
-      view.select_gallery_item(new_gallery_item, true)
+      if (!!div2) {
+        const new_gallery_item = div2.__data__ // a gallery item
+        console.log('new_gallery_item',new_gallery_item)
+        view.select_gallery_item(new_gallery_item, true)
+      }
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -1401,9 +1441,11 @@ class CropGallery {
       const div = view.track_items.select(`div#key-${item.key}`).node()
       const div2 = view.getDivBelow(div)
       console.log(div2)
-      const new_gallery_item = div2.__data__ // a gallery item
-      console.log('new_gallery_item',new_gallery_item)
-      view.select_gallery_item(new_gallery_item, true)
+      if (!!div2) {
+        const new_gallery_item = div2.__data__ // a gallery item
+        console.log('new_gallery_item',new_gallery_item)
+        view.select_gallery_item(new_gallery_item, true)
+      }
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -1442,6 +1484,12 @@ class CropGallery {
       gui.crop_gallery.select_gallery_item(next)
       gui.crop_gallery2.reorder()
       gui.crop_gallery.update()
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.code=='KeyK') {
+      // Remove bee_id for track
+      view.click_unlabel(evt)
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -1682,6 +1730,14 @@ class CropGallery {
     view.select_item( item )
   }
 
+  //KeyK
+  click_unlabel() {
+    const current = this.scrubbed
+
+    gui.set_bee_id(current.item, null) // Unlabel current item
+    gui.refresh()
+    gui.crop_gallery.select_gallery_item(next)
+  }
   // KeyN
   click_new_bee() {
     console.log('New bee_id in gallery1')
@@ -2053,6 +2109,12 @@ class FeatureBand {
     context.webkitImageSmoothingEnabled = false;
 
     const display_data = band.display_data
+
+    if (!display_data) {
+      console.log('WARNING: FeatureBand.render: display_data not defined. ABORT')
+      return
+    }
+
     const height = 128+10+10+10; // Number of features + some indicators
     const width = display_data.length; // Number of rows in the CSV
 
@@ -2516,8 +2578,11 @@ class TrackSplitGUI {
 
     const buttons_div = gui.layout.buttons_div
     buttons_div.append("button")
-        .text("Open CSV data...")
+        .text("Open JSON dataset...")
         .on('click', () => gui.openDialog.open())
+    // buttons_div.append("button")
+    //     .text("Open CSV data...")
+    //     .on('click', () => gui.openDialog.open())
     buttons_div.append("button")
       .text("Save")
       .on('click', () => gui.save_to_csv())
@@ -2624,6 +2689,13 @@ class TrackSplitGUI {
     //gui.layout.default_layout()
     gui.layout.two_columns_layout()
   };
+  hard_refresh() {
+    gui.crop_gallery.load_track( gui.tracks )
+    gui.crop_gallery2.load_track( gui.tracks )
+    gui.crop_gallery.select_gallery_item( gui.crop_gallery.gallery[0] ) // Problem with async loading??
+    gui.crop_gallery2.select_gallery_item( gui.crop_gallery2.gallery[1] )
+    this.refresh()
+  }
   refresh() {
     this.crop_gallery.update()
     this.crop_gallery2.update()
@@ -2631,20 +2703,76 @@ class TrackSplitGUI {
     this.feature_band.render()
   }
 
-  async load_csv(csv_path = '/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch2_sample_num_max.csv') {
+  async load_dataset_json(json_path = '/data/flowerpatch/flowerpatch_20240606_11h04.crops_dataset.json') {
+    const gui = this
+
+    console.log(`Loading dataset JSON from ${json_path}`)
+    const dataset_config = await d3.json(json_path)
+
+    console.log(`dataset_config:`,dataset_config)
+
+    const dirname = json_path.substring(0, json_path.lastIndexOf('/'));
+
+    gui.dataset = {}
+    gui.dataset.json_path = json_path
+    gui.dataset.dirname = dirname
+    gui.dataset.config = dataset_config
+
+    gui.update_dataset() // allow reloading after changing gui.dataset main parameters
+  }
+  update_dataset() {
+    const gui = this
+    const dataset = gui.dataset
+    const dataset_config = gui.dataset.config
+    console.log(`load_dataset_json: using root dirname=${gui.dataset.dirname}`)
+    console.log(`load_dataset_json: using csv_path=${dataset_config.tracks_csv}`)
+    console.log(`load_dataset_json: using crops_dir=${dataset_config.crops_dir}`)
+    console.log(`load_dataset_json: using features_csv=${dataset_config.features_csv}`)
+
+    // FIXME: cleaner separation between original parameters and computed parameters?
+    gui.dataset.tracks_csv = joinPaths(gui.dataset.dirname, dataset_config.tracks_csv)
+    gui.dataset.crops_dir = joinPaths(gui.dataset.dirname, dataset_config.crops_dir)
+    gui.dataset.features_csv = null
+    if (dataset_config.features_csv != null)
+      gui.dataset.features_csv = joinPaths(gui.dataset.dirname, dataset_config.features_csv)
+
+    // Set imagedir before, so that it is defined at the time of loading the tracks
+    gui.crop_gallery.set_imagedir(gui.dataset.crops_dir)
+    gui.crop_gallery2.set_imagedir(gui.dataset.crops_dir)
+
+    gui.load_csv(gui.dataset.tracks_csv, gui.dataset.schema) // calls hard_refresh()
+
+    if (gui.dataset.features_csv) {
+      gui.feature_band.load_features(gui.dataset.features_csv)
+    }
+  }
+
+  async load_csv(csv_path = '/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch2_sample_num_max.csv', 
+                  schema=null) {
     const gui = this
     //gtracks.visits = await d3.csv('data/flowerpatch/flowerpatch_20240606_11h04.visits.csv')
     //gtracks.tracks = await d3.csv('data/flowerpatch/flowerpatch_20240606_11h04.tracks.csv')
     //const tracks = await d3.csv('/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch1_sample_num_max.csv')
+
     let tracks = await d3.csv(csv_path)
     gui.tracks = tracks
     gui.csv_path = csv_path
     gui.main.select('#csv_path').text(`csv_path = ${csv_path}`)
 
-    let imagedir = '/data/reid/images/'
+    //let imagedir = '/data/reid/images/'
 
+    if (schema == null) {
+      // Auto determination
+      if ((tracks[0].crop_filename!=null) && (!tracks[0].new_filepath))
+        schema = 'flowerpatch'
+      else
+        schema = 'reid'
+    }
+    console.log(`Identified schema=${schema}`)
+
+    // FIXME:  UNIFORMIZE THE DATA SCHEMA
     // Flowerpatch data
-    if ((tracks[0].crop_filename!=null) && (!tracks[0].new_filepath)) {
+    if (schema == 'flowerpatch') {
       console.log("WARNING: recognized flowerpatch data format, converting to reid format")
       tracks.forEach( (d, id) => {
         d.new_filepath = d.crop_filename
@@ -2656,9 +2784,9 @@ class TrackSplitGUI {
         d.bee_id = d.bee_id!='0' ? Number(d.bee_id) : undefined // 0 is undefined
         if (isNaN(d.bee_id)) d.bee_id = null
       })
-      imagedir = '/data/flowerpatch/crops/'
+      //imagedir = '/data/flowerpatch/crops/'
       categories_to_indices(tracks, 'video_name', 'video_key')
-    } else { // ReID data
+    } else if (schema == 'reid') { // ReID data
       new_column(tracks, 'bee_id', d => Number(d.ID))
       tracks.forEach( (d, id) => {
         if (isNaN(d.bee_id)) d.bee_id = null
@@ -2695,15 +2823,7 @@ class TrackSplitGUI {
     //tracks = d3.sort( tracks, d => d.new_filepath ) // Do not sort to keep keys aligned
     console.log(`load_csv: tracks loaded, ${tracks.length} rows`)
 
-    // Load defaults
-    //gui.crop_gallery.load_track( gui.get_ref_per_track() )
-    //gui.crop_gallery2.load_track( gui.get_ref_per_track() )
-    gui.crop_gallery.set_imagedir(imagedir)
-    gui.crop_gallery2.set_imagedir(imagedir) // Set imagedire before, so that it is defined at the time of loading the tracks
-    gui.crop_gallery.load_track( gui.tracks )
-    gui.crop_gallery2.load_track( gui.tracks )
-    gui.crop_gallery.select_gallery_item( gui.crop_gallery.gallery[0] ) // Problem with async loading??
-    gui.crop_gallery2.select_gallery_item( gui.crop_gallery2.gallery[1] )
+    gui.hard_refresh()
   }
   jsonToCsv(json) {
     const keys = Object.keys(json[0]);

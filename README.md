@@ -43,6 +43,40 @@ The paths are relative to the JSON file.
 Note: The demo dataset `flowerpatch_20240606_11h04.dataset_single_crop.json` is pushed to the repository as example, but contains only one crop per track.
 The full demo image dataset for `flowerpatch_20240606_11h04.dataset_all_crops.json` is 145MB, available at `/mnt/data/users/rmegret/cyindibee_bee_vis/data/flowerpatch/crops_all`.
 
+# User guide
+
+Shortcuts:
+```
+# LOADING
+r:  TRACK REF - load one reference image for each track
+R:  BEE_ID REF - load one reference image for each bee_id
+t:  TRACK VIEW - show all crops for currently selected track
+b:  BEE_ID VIEW - show one crop per track for currently selected bee_id
+B:  BEE_ID VIEW - show all crops for currently selected bee_id
+
+# FILTERING
+c:  COLLAPSE - show only one ref per track
+C:  COLLAPSE - show only one ref per bee_id
+e:  EXPAND - show one ref per visible track
+E:  EXPAND - show all crops for visible tracks
+
+# LABELING
+n:  NEW BEE_ID - create a new bee_id and label the current track with it
+l:  LABEL - label current track on the LEFT gallery with current bee_id from the RIGHT gallery
+k:  UNLABEL - remove bee_id label from current track
+
+# VIEW
+1:  select LEFT gallery
+2:  select RIGHT gallery
+x:  EXPAND - expand or collapse current gallery view
+
+# Danger (cannot cancel)
+\:  SPLIT TRACK - create a new track_key and assign current RED SELECTION to it. (typically go to Track View, use Select... After to select the end of the track to split first)
+m:  MERGE BEE_ID - merge tracks in RED SELECTION into bee_id in BLUE SELECTION (will ask for confirmation)
+i:  mark current track to be ignored (by default will disappear from galleries)
+I:  mark current track to not be ignored
+```
+
 
 # Structure of the project:
 

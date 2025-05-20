@@ -25,7 +25,7 @@ async function show_track_util() {
   //gui.load_csv('/data/reid/summer_bee_dataset_open_train_bee_64_ids_batch2_sample_num_max.csv')
   //gui.feature_band.load_features('/data/reid/batch_1_train_embeddings_26w82ua9.csv')
 
-  gui.load_dataset_json('/data/flowerpatch/flowerpatch_20240606_11h04.crops_dataset.json')
+  gui.load_dataset_json('/data/flowerpatch/flowerpatch_20240606_11h04.dataset_single_crop.json')
   //gui.load_dataset_json('/data/reid/reid.crops_dataset.json')
 }
 

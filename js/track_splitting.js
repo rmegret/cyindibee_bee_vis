@@ -133,6 +133,8 @@ class LoadDataDialog {
 
     this.title = title
     this.dataset_root = '/data/'
+    this.config = {}
+    this.config.max_depth = 2
 
     this.init()
   }
@@ -253,11 +255,11 @@ class LoadDataDialog {
   }
   async findJSONFiles(basePath, patternFn = path => path.endsWith('.json')) {
       const dialog = this
-      const queue = [basePath];
+      const queue = [[basePath,0]];
       const paths = [];
 
       while (queue.length > 0) {
-          const current = queue.pop();
+          const [current,depth] = queue.pop();
           const fullUrl = new URL(current, window.location.origin).href;
           
           dialog.outputDebug.textContent += `\nVisiting ${fullUrl}`;
@@ -268,7 +270,9 @@ class LoadDataDialog {
               const fullPath = current + entry;
               if (entry.endsWith('/')) {
                   // It's a subdirectory
-                  queue.push(fullPath);
+                  if (depth<dialog.config.max_depth) {
+                    queue.push([fullPath,depth+1]);
+                  }
               } else if (patternFn(fullPath)) {
                   paths.push(fullPath);
               }
@@ -571,7 +575,8 @@ class CropGallery {
         }
 
     view.scrubbed = undefined
-    view.selected = {} // Mapping (item) => bool
+    //view.selected = {} // Mapping (item) => bool
+    view.nb_selected = 0
 
     makeDispatchable(view, ["item-selected","item-unselected","gallery-changed"])
 
@@ -641,13 +646,10 @@ class CropGallery {
           //view.update()
         })
 
+
     const buttons_div_select = container.append("div")
         .attr('class','buttons-div flex-container')
         .style('display', view.config.showToolbar?'block':'none');
-
-    const dataset_div = container.append("div")
-        .attr('class','dataset-div flex-container')
-    view.dataset_div = dataset_div
 
     const divleft = buttons_div_select.append('div').attr('class','flex-left')
     divleft.append("button").text("Select BEFORE")
@@ -667,6 +669,11 @@ class CropGallery {
       divright.append("button").text("Unselect AFTER")
       .on('click', () => view.unselect('after'))
 
+
+    const dataset_div = container.append("div")
+        .attr('class','dataset-div flex-container')
+    view.dataset_div = dataset_div
+
     /* GALLERY TRACK VIEW */
     const track_div = container.append("div")
       .attr('class','track-div')
@@ -678,6 +685,13 @@ class CropGallery {
 
     track_items.on('keydown', (evt) => view.onkeypress(evt))
         .attr("tabindex", "1")
+
+    
+    
+    const status_div = container.append("div")
+        .attr('class','buttons-div flex-container')
+        .attr('id','status_bar')
+    view.status_div = status_div
 
     console.log("crop_list_view initialized");
   }
@@ -1258,6 +1272,13 @@ class CropGallery {
       //.filter(d => d.filepath == clicked_d.filepath) // Use filepath as key
       //.classed("scrubbed", d => d.filepath == view.scrubbed.filepath)
       .classed("scrubbed", d => d === view.scrubbed)  // Use directly the gallery_item
+
+    const nb_selected = view.gallery.reduce((acc,gi)=>acc+gi.selected, 0)
+    if (nb_selected>0)
+      view.status_div.html(`<b style="color:red;">Selection: ${nb_selected} item${nb_selected?'s':''}</b>`)
+    else
+      view.status_div.html(`<b style="color:black;">Selection: ${nb_selected} item${nb_selected?'s':''}</b>`)
+    view.nb_selected = nb_selected
   }
 
   focus() {
@@ -1407,19 +1428,51 @@ class CropGallery {
     }
     if (evt.code=='ArrowRight') {
       //console.log(evt)
-      let elts = view.gallery.filter(det => det.order > view.scrubbed.order)
-      if (elts.length==0) {console.log('Already at start, ABORT'); return}
-      let new_item = elts[0]
-      view.select_gallery_item(new_item, true)
+      if (evt.shiftKey) {
+        const current = view.scrubbed
+        const item = current.item
+        let elts = gui.tracks.filter(det => (det.track_key == item.track_key) && (det.frame_id > item.frame_id))
+        if (elts.length==0) {console.log('Already at end, ABORT'); return}
+        let new_item = elts[0]
+        gui.tracks.filter(det => det.track_key == item.track_key).forEach(det=>det.is_track_ref=(det.key==new_item.key))
+        if (item.is_bee_id_ref) {
+          item.is_bee_id_ref = false
+          new_item.is_bee_id_ref = true
+        }
+        //new_item.is_track_ref = true
+        view.update()
+        view.select_item(new_item, true)
+      } else {
+        let elts = view.gallery.filter(det => det.order > view.scrubbed.order)
+        if (elts.length==0) {console.log('Already at end, ABORT'); return}
+        let new_item = elts[0]
+        view.select_gallery_item(new_item, true)
+      }
       evt.preventDefault();
       evt.stopPropagation()
     }
     if (evt.code=='ArrowLeft') {
       //console.log(evt)
-      let elts = view.gallery.filter(det => det.order < view.scrubbed.order)
-      if (elts.length==0) {console.log('Already at end, ABORT'); return}
-      let new_item = elts[elts.length-1]
-      view.select_gallery_item(new_item, true)
+      if (evt.shiftKey) {
+        const current = view.scrubbed
+        const item = current.item
+        let elts = gui.tracks.filter(det => (det.track_key == item.track_key) && (det.frame_id < item.frame_id))
+        if (elts.length==0) {console.log('Already at end, ABORT'); return}
+        let new_item = elts[elts.length-1]
+        gui.tracks.filter(det => det.track_key == item.track_key).forEach(det=>det.is_track_ref=(det.key==new_item.key))
+        if (item.is_bee_id_ref) {
+          item.is_bee_id_ref = false
+          new_item.is_bee_id_ref = true
+        }
+        //new_item.is_track_ref = true
+        view.update()
+        view.select_item(new_item, true)
+      } else {
+        let elts = view.gallery.filter(det => det.order < view.scrubbed.order)
+        if (elts.length==0) {console.log('Already at start, ABORT'); return}
+        let new_item = elts[elts.length-1]
+        view.select_gallery_item(new_item, true)
+      }
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -1620,19 +1673,29 @@ class CropGallery {
     if (evt.code=='KeyI') {
       const current = view.scrubbed
       const item = view.scrubbed.item
-      if (evt.shiftKey) {
-        console.log('Unignore track for item ',item)
-        gui.tracks.filter( d => d.track_key == item.track_key) // for all items with same track
-                    .map( d => {d.ignore = false} )
-        gui.refresh()
-        view.select_gallery_item( current, true )
+
+      let selected_track_keys;
+      if (view.nb_selected>0) {
+        //console.log('SELECTED:', view.gallery.filter( gi => gi.selected ).map( gi => gi.item.track_key ))
+        selected_track_keys = new Set(view.gallery.filter( gi => gi.selected ).map( gi => gi.item.track_key ))        
       } else {
-        console.log('Ignore track for item',item)
-        gui.tracks.filter( d => d.track_key == item.track_key) // for all items with same track
-                    .map( d => {d.ignore = true} )
-        gui.refresh()
-        view.select_gallery_item( current, true )
+        selected_track_keys = new Set([item.track_key])
       }
+
+      let new_ignore_value; // undefined
+      if (evt.shiftKey) {
+        console.log('Unignore track for track_keys',selected_track_keys)
+        new_ignore_value = false
+      } else {
+        console.log('Ignore track for track_keys',selected_track_keys)
+        new_ignore_value = true
+      }
+      
+      gui.tracks.filter( d => selected_track_keys.has(d.track_key)) // for all items with same track
+                    .map( d => {d.ignore = new_ignore_value} )
+      
+      gui.refresh()
+      view.select_gallery_item( current, true )
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -2811,6 +2874,8 @@ class TrackSplitGUI {
       categories_to_indices(tracks, 'video_name', 'video_key')
       categories_to_indices(tracks, 'track_name', 'track_key') // to avoid track_id which is video specific
       drop_columns(tracks, ['Unnamed: 0.5','Unnamed: 0.4','Unnamed: 0.3','Unnamed: 0.2','Unnamed: 0.1','Unnamed: 0','ID'])
+    } else {
+      console.log(`Unknown track schema ${schema}. LEFT AS IS, may not work`)
     }
 
     // Preselect Reference items for each track

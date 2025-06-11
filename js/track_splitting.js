@@ -698,19 +698,23 @@ class CropGallery {
 
   set_mode(mode) {
     if (mode == 'current_track') {
+      this.dataset_query.filter_ignore = false
       this.click_load_selected_track()
     } else if (mode == 'current_bee_id') {
+      this.dataset_query.filter_ignore = false
       this.click_load_selected_bee_id({shiftKey:false})
     } else if (mode == 'unlabeled_tracks') {
       this.dataset_query.scope = {}
       this.dataset_query.filter_ref = {label:'track_key',value:true}
       this.dataset_query.filter_label = {label:'bee_id',value:false}
+      this.dataset_query.filter_ignore = false
       //this.refresh_dataset_buttons()
       this.update()
     } else if (mode == 'labeled_bee_ids') {
       this.dataset_query.scope = {}
       this.dataset_query.filter_ref = {label:'bee_id',value:true}
       this.dataset_query.filter_label = {label:'bee_id',value:true}
+      this.dataset_query.filter_ignore = false
       this.update()
     } else if (mode == 'ignored_tracks') {
       this.dataset_query.scope = {}
@@ -933,14 +937,18 @@ class CropGallery {
       const zipped = keys.map((val, i) => [val, ascs[i]]);
       return (a, b) => {
         for (const [key,asc] of zipped) {
-          if ((a==null) && (b==null)) continue;
-          if ((a==null) && (b!=null)) return 1;
-          if ((a!=null) && (b==null)) return -1;
+          const va = a.item[key]
+          const vb = b.item[key]
+          if ((va==null) && (vb==null)) continue;
           if (asc) {
-            const cmp = d3.ascending(a.item[key], b.item[key]);
+            if ((va==null) && (vb!=null)) return -1; // a-b, null before the rest in asc
+            if ((va!=null) && (vb==null)) return 1; // a-b, null before the rest in asc
+            const cmp = d3.ascending(va, vb);
             if (cmp !== 0) return cmp;
           } else {
-            const cmp = d3.descending(a.item[key], b.item[key]);
+            if ((va==null) && (vb!=null)) return 1; // a-b, null before the rest in asc
+            if ((va!=null) && (vb==null)) return -1; // a-b, null before the rest in asc
+            const cmp = d3.descending(va, vb);
             if (cmp !== 0) return cmp;
           }
         }
@@ -1524,19 +1532,7 @@ class CropGallery {
     if (evt.code=='KeyL') {
       console.log('Label bee_id in gallery1 using gallery2 selection')
       //console.log(evt)
-      let current = gui.crop_gallery.scrubbed   // FIXME: not same for  gallery and gallery2
-      if (evt.shiftKey) {
-        gui.details.set_bee_ids_from2() // Label all the red selections
-      } else {
-        gui.details.set_bee_id_from2() // Label the current blue selection
-      }
-      let next = gui.crop_gallery.gallery.find(d => d.order >= current.order)
-      if (next == null) next = gui.crop_gallery.gallery[0] 
-      gui.crop_gallery.reorder()
-      gui.crop_gallery.update()
-      gui.crop_gallery.select_gallery_item(next)
-      gui.crop_gallery2.reorder()
-      gui.crop_gallery.update()
+      view.click_label(evt)
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -1676,26 +1672,42 @@ class CropGallery {
 
       let selected_track_keys;
       if (view.nb_selected>0) {
-        //console.log('SELECTED:', view.gallery.filter( gi => gi.selected ).map( gi => gi.item.track_key ))
-        selected_track_keys = new Set(view.gallery.filter( gi => gi.selected ).map( gi => gi.item.track_key ))        
+        const selected_items = view.gallery.filter( gi => gi.selected ).map( gi => gi.item )
+        selected_track_keys = [...new Set(selected_items.map( d => d.track_key ))]
+        let confirm;
+        if (evt.shiftKey) {
+           confirm = prompt(`Please confirm: ignoring ${selected_track_keys.length} tracks [${selected_track_keys}]`, 'y')
+        } else {
+           confirm = prompt(`Please confirm: un-ignoring ${selected_track_keys.length} tracks [${selected_track_keys}]`, 'y')
+        }
+        if (confirm == 'y') {
+          //console.log('SELECTED:', view.gallery.filter( gi => gi.selected ).map( gi => gi.item.track_key ))
+        } else {
+          selected_track_keys = []
+        }      
       } else {
-        selected_track_keys = new Set([item.track_key])
+        selected_track_keys = [item.track_key]
       }
 
-      let new_ignore_value; // undefined
-      if (evt.shiftKey) {
-        console.log('Unignore track for track_keys',selected_track_keys)
-        new_ignore_value = false
-      } else {
-        console.log('Ignore track for track_keys',selected_track_keys)
-        new_ignore_value = true
+      if (selected_track_keys.length>0) {
+        let new_ignore_value; // undefined
+        if (evt.shiftKey) {
+          console.log('Unignore track for track_keys',selected_track_keys)
+          new_ignore_value = false
+        } else {
+          console.log('Ignore track for track_keys',selected_track_keys)
+          new_ignore_value = true
+        }
+        
+        const selected_track_keys_set = new Set(selected_track_keys)
+        gui.tracks.filter( d => selected_track_keys_set.has(d.track_key)) // for all items with same track
+                      .map( d => {d.ignore = new_ignore_value} )
+
+        view.gallery.forEach( gi => gi.selected=false )
+        
+        gui.refresh()
+        view.select_gallery_item( current, true )
       }
-      
-      gui.tracks.filter( d => selected_track_keys.has(d.track_key)) // for all items with same track
-                    .map( d => {d.ignore = new_ignore_value} )
-      
-      gui.refresh()
-      view.select_gallery_item( current, true )
       evt.preventDefault();
       evt.stopPropagation()
     }
@@ -1750,6 +1762,30 @@ class CropGallery {
       evt.preventDefault();
       evt.stopPropagation()
     }
+    if (evt.key=='[') {
+      console.log(`Select before`)
+      view.select('before', true)
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.key==']') {
+      console.log(`Select after`)
+      view.select('after', true)
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.key=='{') {
+      console.log(`Unselect before`)
+      view.select('before', false)
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
+    if (evt.key=='}') {
+      console.log(`Unselect after`)
+      view.select('after', false)
+      evt.preventDefault();
+      evt.stopPropagation()
+    }
   };
 
   // Util function to set predefined filters
@@ -1793,13 +1829,47 @@ class CropGallery {
     view.select_item( item )
   }
 
+  //KeyL
+  click_label() {
+    const selected_track_keys = [...new Set(gui.crop_gallery.gallery.filter(gi=>gi.selected && gi.item.track_key!=null).map( gi => gi.item.track_key ))]
+    const current = gui.crop_gallery.scrubbed   // FIXME: not same for  gallery and gallery2
+    if (selected_track_keys.length>0) { // Red selection
+      const confirm = prompt(`Please confirm: label ${selected_track_keys.length} tracks [${selected_track_keys}] with bee_id ${gui.crop_gallery2.scrubbed.item.bee_id}`, 'y')
+      if (confirm == 'y') {
+        gui.details.set_bee_ids_from2() // Label all the red selections
+      }
+    } else { // Regular selection
+      gui.details.set_bee_id_from2() // Label the current blue selection
+    }
+    let next = gui.crop_gallery.gallery.find(d => d.order >= current.order)
+    if (next == null) next = gui.crop_gallery.gallery[0] 
+    gui.crop_gallery.reorder()
+    gui.crop_gallery.update()
+    gui.crop_gallery.select_gallery_item(next)
+    gui.crop_gallery2.reorder()
+    gui.crop_gallery.update()
+  }
   //KeyK
   click_unlabel() {
     const current = this.scrubbed
+    const selected_items = this.gallery.filter(gi=>gi.selected && gi.item.track_key!=null).map( gi => gi.item )
+    const selected_track_keys = [...new Set(selected_items.map( d => d.track_key ))]
 
-    gui.set_bee_id(current.item, null) // Unlabel current item
+    if (selected_track_keys.length>0) { // Red selection
+      const confirm = prompt(`Please confirm: unlabel bee_id from ${selected_track_keys.length} tracks [${selected_track_keys}]`, 'y')
+      if (confirm == 'y') {
+        gui.set_tracks_bee_id(selected_items, null) // Unlabel all the red selections
+      }
+    } else { // Regular selection
+      gui.set_bee_id(current.item, null) // Unlabel current item
+    }
+
     gui.refresh()
-    gui.crop_gallery.select_gallery_item(next)
+
+    let next = this.gallery.find(d => d.order >= current.order)
+    if (next == null) next = this.gallery[0] 
+
+    this.select_gallery_item(next)
   }
   // KeyN
   click_new_bee() {
@@ -3084,6 +3154,26 @@ class TrackSplitGUI {
     item.bee_id_src = source
 
     this.propagate_bee_id_to_track(item, source)
+  }
+  set_tracks_bee_id(selected_items, bee_id, source="manual") { // Set bee_id for detail1
+
+    const selected_track_keys = [...new Set(selected_items.map( d => d.track_key ))]
+    
+    for (let item of this.tracks) {
+
+      if (!selected_track_keys.includes(item.track_key)) continue;
+
+      if ((item.bee_id_orig == null) && (item.bee_id != null)) // In case we started with initial ids, keep them as backup
+        item.bee_id_orig = item.bee_id // Save original value (but do not overwrite if multiple edits). FIXME: proper undo stack
+
+      item.bee_id = bee_id
+      if (selected_items.includes(item)) {
+        item.bee_id_src = source  // FIXME: state which item was actually selected
+      } else {
+        item.bee_id_src = 'track_prop,'+source
+      }
+
+    }
   }
   propagate_bee_id_to_track(item, source=null) {
 

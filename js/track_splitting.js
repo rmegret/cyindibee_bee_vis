@@ -1872,10 +1872,19 @@ class CropGallery {
     this.select_gallery_item(next)
   }
   // KeyN
-  click_new_bee() {
+  click_new_bee(evt) {
+    const view = this
     console.log('New bee_id in gallery1')
     //console.log(evt)
     const current = gui.crop_gallery.scrubbed
+
+    const selected_items = view.gallery.filter( gi => gi.selected ).map( gi => gi.item )
+    const selected_track_keys = [...new Set(selected_items.map( d => d.track_key ))]
+    if (selected_track_keys.length>0) {
+      let confirm;
+      confirm = prompt(`New bee_id: ABORTED, not compatible with red selection. Create new bee_id from only blue selection.`, 'CANCEL')
+      return
+    }
 
     gui.details.set_bee_id_new()
     //gui.details.set_detail2( gui.details.item )

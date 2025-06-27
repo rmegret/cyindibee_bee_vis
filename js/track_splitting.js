@@ -2398,6 +2398,26 @@ class CropDetails {
     details.item = undefined;
     details.item2 = undefined;
 
+    details.crop_props = ['key','frame_id','new_filepath','crop_labels']
+    details.track_props = ['track_key','track_id','ignore','bee_id','paint','paintcode','color_id','tag','tagid','track_labels']
+    details.props_schema = {
+      default:{type:'str', editable:false},
+      key:{},
+      frame_id:{type:'int'},
+      new_filepath:{},
+      crop_labels:{editable:true},
+      track_key:{type:'int'},
+      track_id:{type:'int',editable:true, validation:'avoid_track_id_conflict'},
+      ignore:{type:'bool', editable:true},
+      bee_id:{editable:true},
+      paint:{editable:true},
+      paintcode:{editable:true},
+      color_id:{type:'int',editable:true},
+      tag:{editable:true},
+      tagid:{editable:true},
+      track_labels:{editable:true},
+    }
+
     makeDispatchable(details, ["bee_id_changed","bee_ids_changed"])
 
     details.init()
@@ -2442,7 +2462,7 @@ class CropDetails {
     detail_div.select('.detail-toolbar').append("button")
       .text("Load whole track")
       .on('click', function() { details.load_whole_track(details.item) })
-      detail_div.select('.detail-toolbar').append("button")
+    detail_div.select('.detail-toolbar').append("button")
         .text("Copy bee_id from right")
         .on('click', function() { details.transfer_bee_id(details.item, details.item2) })
 
@@ -2469,32 +2489,53 @@ class CropDetails {
   render() {
     const details = this
 
+    // Table templates
+    let crop_attr_html = ''
+    for (let attr of details.crop_props) {
+      const schema = Object.assign({}, details.props_schema['default'], details.props_schema[attr]);
+      const attr_level = 'attr-crop'
+      if (schema.editable) {
+        crop_attr_html += `<tr><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
+      } else {
+        crop_attr_html += `<tr><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
+      }
+    }
+    let track_attr_html = ''
+    for (let attr of details.track_props) {
+      const schema = Object.assign({}, details.props_schema['default'], details.props_schema[attr]);
+      const attr_level = 'attr-track'
+      if (schema.editable) {
+        track_attr_html += `<tr><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
+      } else {
+        track_attr_html += `<tr><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
+      }
+    }
+
     // DETAIL
     if (details.item) {
       let d = details.item
       details.div.select('#detail-div > img')
         .attr("src",details.gallery.imagedir+d.new_filepath)
 
-      details.div.select('#detail-info > .detail-table')
+      const table = details.div.select('#detail-info > .detail-table') // TODO: replace with propoer .data approach
         .html(`<table>
-        <tr><td>bee_id</td><td><input id='bee_id'></input></td></tr>
-        <tr><td>color_id</td><td><b>${d.color_id}</b></td></tr>
-        <tr><td>key</td><td><b>${d.key}</b></td></tr>
-        <tr><td>track_key</td><td><b>${d.track_key}</b></td></tr>
-        <tr><td>track_id</td><td><b>${d.track_id}</b></td></tr>
-        <tr><td>frame_id</td><td><b>${d.frame_id}</b></td></tr>`+
-        // <tr><td>batch</td><td><b>${d.batch}</b></td></tr>
-        // <tr><td>environment</td><td><b>${d.environment}</b></td></tr>
-        // <tr><td>bee_range</td><td><b>${d.bee_range}</b></td></tr>
-        // <tr><td>pass</td><td><b>${d.pass}</b></td></tr>
-        // <tr><td>background</td><td><b>${d.background}</b></td></tr>
-        `<tr><td>ignore</td><td><b>${d.ignore}</b></td></tr>
-        <tr><td>image</td><td><b>${d.new_filepath}</b></td></tr>
+        <tr><td colspan="2"><b>Crop props</b> <button id="choose_crop_props_button">Choose</button></td></tr>
+        ${crop_attr_html}
+        <tr><td colspan="2"><b>Track props</b> <button id="choose_track_props_button">Choose</button></td></tr>
+        ${track_attr_html}
       </table>
           `)
-      details.div.select('#bee_id')
-        .attr('value', d.bee_id)
-        .on('change', (evt)=> details.input_changed_bee_id(evt))
+
+      table.selectAll('#choose_crop_props_button').on('click', (evt) => details.choose_crop_props_button_clicked())
+      table.selectAll('#choose_track_props_button').on('click', (evt) => details.choose_track_props_button_clicked())
+
+      table.selectAll(`input.attr-input`)
+      .classed('attr-item',true)
+      .attr('value', (_, i, nodes) => d[nodes[i].id])  // .id is attr name
+      .on('change', (evt)=> details.input_changed_attr(evt))  // Also cover bee_id
+
+      table.selectAll(`span.attr`)
+        .text((_, i, nodes) => d[nodes[i].id])  // .id is attr name
     } else {
       //Empty details
       details.div.select('#detail-div > img')
@@ -2508,23 +2549,25 @@ class CropDetails {
       details.div.select('#detail-div2 > img')
         .attr("src",details.gallery2.imagedir+d.new_filepath)
 
-      details.div.select('#detail-info2 > .detail-table')
+      const table = details.div.select('#detail-info2 > .detail-table') // TODO: replace with propoer .data approach
         .html(`<table>
-        <tr><td>bee_id</td><td><b>${d.bee_id}</b></td></tr>
-        <tr><td>color_id</td><td><b>${d.color_id}</b></td></tr>
-        <tr><td>key</td><td><b>${d.key}</b></td></tr>
-        <tr><td>track_key</td><td><b>${d.track_key}</b></td></tr>
-        <tr><td>track_id</td><td><b>${d.track_id}</b></td></tr>
-        <tr><td>frame_id</td><td><b>${d.frame_id}</b></td></tr>`+
-        // <tr><td>batch</td><td><b>${d.batch}</b></td></tr>
-        // <tr><td>environment</td><td><b>${d.environment}</b></td></tr>
-        // <tr><td>bee_range</td><td><b>${d.bee_range}</b></td></tr>
-        // <tr><td>pass</td><td><b>${d.pass}</b></td></tr>
-        // <tr><td>background</td><td><b>${d.background}</b></td></tr>
-        `<tr><td>ignore</td><td><b>${d.ignore}</b></td></tr>
-        <tr><td>image</td><td><b>${d.new_filepath}</b></td></tr>
+        <tr><td colspan="2"><b>Crop props</b> <button id="choose_crop_props_button">Choose</button></td></tr>
+        ${crop_attr_html}
+        <tr><td colspan="2"><b>Track props</b> <button id="choose_track_props_button">Choose</button></td></tr>
+        ${track_attr_html}
       </table>
           `)
+
+      table.selectAll('#choose_crop_props_button').on('click', (evt) => details.choose_crop_props_button_clicked())
+      table.selectAll('#choose_track_props_button').on('click', (evt) => details.choose_track_props_button_clicked())
+
+      table.selectAll(`input.attr-input`)
+      .classed('attr-item2',true)
+      .attr('value', (_, i, nodes) => d[nodes[i].id])  // .id is attr name
+      .on('change', (evt)=> details.input_changed_attr(evt))  // Also cover bee_id
+
+      table.selectAll(`span.attr`)
+        .text((_, i, nodes) => d[nodes[i].id])  // .id is attr name
     } else {
       //Empty details
       details.div.select('#detail-div2 > img')
@@ -2534,6 +2577,66 @@ class CropDetails {
     }
     
   };
+  
+  
+  choose_crop_props_button_clicked() {
+    const comma_list = this.crop_props.join(',')
+    const val = prompt('crop_props list:', comma_list)
+    if (val != null)
+      this.crop_props = val.split(",")
+    this.render()
+  }
+  choose_track_props_button_clicked() {
+    const comma_list = this.track_props.join(',')
+    const val = prompt('track_props list:', comma_list)
+    if (val != null)
+      this.track_props = val.split(",")
+    this.render()
+  }
+  input_changed_attr(evt) {
+    console.log('input_changed_attr',evt)
+    const input = evt.srcElement
+    const input_d3 = d3.select(input)
+    
+    const attr = input_d3.attr('id')
+    const value = input.value
+    //this.set_attr(attr, input.value)
+    const track_level = input_d3.classed('attr-track')
+    
+    let item
+    if (d3.select(input).classed('attr-item')) {
+      item = this.item
+    } else if (d3.select(input).classed('attr-item2')) {
+      item = this.item2
+    } else {
+      console.log(`input_changed_attr: internal error, input. ABORTED`, input)
+      return
+    }
+    if (track_level) {
+      console.log(`input_changed_attr: track-level`)
+      if (attr=='bee_id') {
+        gui.set_bee_attr(item, attr, value) // TODO: uniformize attr editing
+      } else {
+        gui.set_bee_attr(item, attr, value)
+      }
+    } else {
+      console.log(`input_changed_attr: crop-level`)
+      // Change just this crop
+      gui.set_bee_attr(item, attr, value, false) // Do not propagate
+    }
+  }
+  set_attr(attr, value, source="manual") { // Set bee_id for detail1
+    console.log('set_attr',attr,value)
+    let item = this.item
+
+    gui.set_bee_attr(this.item, attr, value)
+
+    //this.div.select(`.attr#${attr}`)
+    //    .attr('value', value) // Should not trigger change event
+
+    //this._emit("bee_attr_changed", item) // May trigger change id to the whole track at gui level
+  }
+
   input_changed_bee_id(evt) {
     console.log('input_changed_bee_id',evt)
     let input = evt.srcElement
@@ -3153,6 +3256,31 @@ class TrackSplitGUI {
     max = positiveMaxIgnoreNull(max,max2)
     const bee_id = Number(max+1)
     return bee_id
+  }
+  set_bee_attr(item, attr, value, propagate=true) { // Set bee_id for detail1
+    item[attr] = value
+
+    if (propagate) {
+      this.propagate_bee_attr_to_track(item, attr)
+      // Propagate calls rerender
+    } else {
+      // Rerender
+      this.crop_gallery.update()
+      this.crop_gallery2.update()
+      this.details.render()
+    }
+  }
+  propagate_bee_attr_to_track(item, attr) {
+
+    console.log('propagate_bee_attr_to_track, from',item, attr)
+
+    let track_key = item.track_key
+    let value = item[attr]
+    this.tracks.filter( d => d.track_key == track_key).forEach( item => item[attr]=value )
+
+    this.crop_gallery.update()
+    this.crop_gallery2.update()
+    this.details.render()
   }
   set_bee_id(item, bee_id, source="manual") { // Set bee_id for detail1
 

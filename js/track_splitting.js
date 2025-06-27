@@ -2384,6 +2384,28 @@ class FeatureBand {
   };
 }
 
+function bool(value) {
+  if (typeof value === 'boolean') return value;
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    switch (value.trim().toLowerCase()) {
+      case 'true':
+      case '1':
+      case 'yes':
+      case 'y':
+      case 'on':
+        return true;
+      case 'false':
+      case '0':
+      case 'no':
+      case 'n':
+      case 'off':
+        return false;
+    }
+  }
+  return Boolean(value);  // fallback: JS truthiness
+}
+
 class CropDetails {
   constructor(_config) {
     const details = this

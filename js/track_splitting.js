@@ -2401,15 +2401,15 @@ class CropDetails {
     details.crop_props = ['key','frame_id','new_filepath','crop_labels']
     details.track_props = ['track_key','track_id','ignore','bee_id','paint','paintcode','color_id','tag','tagid','track_labels']
     details.props_schema = {
-      default:{type:'str', editable:false},
-      key:{},
-      frame_id:{type:'int'},
-      new_filepath:{},
+      default:{type:'str', editable:true},
+      key:{editable:false},
+      frame_id:{type:'int',editable:false},
+      new_filepath:{editable:false},
       crop_labels:{editable:true},
-      track_key:{type:'int'},
+      track_key:{type:'int',editable:false},
       track_id:{type:'int',editable:true, validation:'avoid_track_id_conflict'},
       ignore:{type:'bool', editable:true},
-      bee_id:{editable:true},
+      bee_id:{type:'int', editable:true},
       paint:{editable:true},
       paintcode:{editable:true},
       color_id:{type:'int',editable:true},

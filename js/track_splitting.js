@@ -2523,29 +2523,21 @@ class CropDetails {
       }
     }
     let track_attr_html = ''
-    let tag_attr_html = ''
+    // Track which fields are currently selected for showing
+    let shown_fields = details.track_props.filter(f => !(details.track_props_hidden||[]).includes(f));
+    let all_hidden = details._track_props_all_hidden || false;
     for (let attr of details.track_props) {
       const schema = Object.assign({}, details.props_schema['default'], details.props_schema[attr]);
       const attr_level = 'attr-track'
-      // Group tag-related fields
-      if (["tag","tagid"].includes(attr)) {
-        if (schema.editable) {
-          tag_attr_html += `<tr><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
-        } else {
-          tag_attr_html += `<tr><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
-        }
+      const row_style = (!all_hidden && shown_fields.includes(attr)) ? '' : ' style="display:none;"';
+      if (schema.editable) {
+        track_attr_html += `<tr class="track-prop-row" data-attr="${attr}"${row_style}><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
       } else {
-        if (schema.editable) {
-          track_attr_html += `<tr><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
-        } else {
-          track_attr_html += `<tr><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
-        }
+        track_attr_html += `<tr class="track-prop-row" data-attr="${attr}"${row_style}><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
       }
     }
-
-    // Add a toggle for tag props
-    let tag_toggle_html = `<tr><td colspan="2"><button type="button" id="toggle_tag_props_btn">Show tag props</button></td></tr>`
-    let tag_section_html = `<tbody id="tag_props_section" style="display:none;">${tag_attr_html}</tbody>`
+    // Add a toggle for hiding/showing all selected track props
+    let track_toggle_html = `<button type=\"button\" id=\"toggle_track_props_btn\" style=\"margin-left:8px;\">${all_hidden ? 'Show' : 'Hide'} track props</button>`
 
     // DETAIL
     if (details.item) {
@@ -2557,19 +2549,14 @@ class CropDetails {
         .html(`<table>
         <tr><td colspan="2"><b>Crop props</b> <button id="choose_crop_props_button">Choose</button></td></tr>
         ${crop_attr_html}
-        <tr><td colspan="2"><b>Track props</b> <button id="choose_track_props_button">Choose</button></td></tr>
+        <tr><td colspan=\"2\"><b>Track props</b> <button id=\"choose_track_props_button\">Choose</button>${track_toggle_html}</td></tr>
         ${track_attr_html}
-        ${tag_toggle_html}
-        ${tag_section_html}
       </table>`)
 
-      // Toggle tag props visibility
-      table.selectAll('#toggle_tag_props_btn').on('click', function() {
-        const section = table.select('#tag_props_section')
-        const btn = table.select('#toggle_tag_props_btn')
-        const isHidden = section.style('display') === 'none'
-        section.style('display', isHidden ? '' : 'none')
-        btn.text(isHidden ? 'Hide tag props' : 'Show tag props')
+      // Toggle all selected track props visibility
+      table.selectAll('#toggle_track_props_btn').on('click', function() {
+        details._track_props_all_hidden = !details._track_props_all_hidden;
+        details.render();
       })
 
       table.selectAll('#choose_crop_props_button').on('click', (evt) => details.choose_crop_props_button_clicked())
@@ -2599,18 +2586,13 @@ class CropDetails {
         .html(`<table>
         <tr><td colspan="2"><b>Crop props</b> <button id="choose_crop_props_button">Choose</button></td></tr>
         ${crop_attr_html}
-        <tr><td colspan="2"><b>Track props</b> <button id="choose_track_props_button">Choose</button></td></tr>
+        <tr><td colspan=\"2\"><b>Track props</b> <button id=\"choose_track_props_button\">Choose</button>${track_toggle_html}</td></tr>
         ${track_attr_html}
-        ${tag_toggle_html}
-        ${tag_section_html}
       </table>`)
 
-      table.selectAll('#toggle_tag_props_btn').on('click', function() {
-        const section = table.select('#tag_props_section')
-        const btn = table.select('#toggle_tag_props_btn')
-        const isHidden = section.style('display') === 'none'
-        section.style('display', isHidden ? '' : 'none')
-        btn.text(isHidden ? 'Hide tag props' : 'Show tag props')
+      table.selectAll('#toggle_track_props_btn').on('click', function() {
+        details._track_props_all_hidden = !details._track_props_all_hidden;
+        details.render();
       })
 
       table.selectAll('#choose_crop_props_button').on('click', (evt) => details.choose_crop_props_button_clicked())

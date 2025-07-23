@@ -2523,15 +2523,29 @@ class CropDetails {
       }
     }
     let track_attr_html = ''
+    let tag_attr_html = ''
     for (let attr of details.track_props) {
       const schema = Object.assign({}, details.props_schema['default'], details.props_schema[attr]);
       const attr_level = 'attr-track'
-      if (schema.editable) {
-        track_attr_html += `<tr><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
+      // Group tag-related fields
+      if (["tag","tagid"].includes(attr)) {
+        if (schema.editable) {
+          tag_attr_html += `<tr><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
+        } else {
+          tag_attr_html += `<tr><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
+        }
       } else {
-        track_attr_html += `<tr><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
+        if (schema.editable) {
+          track_attr_html += `<tr><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
+        } else {
+          track_attr_html += `<tr><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
+        }
       }
     }
+
+    // Add a toggle for tag props
+    let tag_toggle_html = `<tr><td colspan="2"><button type="button" id="toggle_tag_props_btn">Show tag props</button></td></tr>`
+    let tag_section_html = `<tbody id="tag_props_section" style="display:none;">${tag_attr_html}</tbody>`
 
     // DETAIL
     if (details.item) {
@@ -2539,14 +2553,24 @@ class CropDetails {
       details.div.select('#detail-div > img')
         .attr("src",details.gallery.imagedir+d.new_filepath)
 
-      const table = details.div.select('#detail-info > .detail-table') // TODO: replace with propoer .data approach
+      const table = details.div.select('#detail-info > .detail-table')
         .html(`<table>
         <tr><td colspan="2"><b>Crop props</b> <button id="choose_crop_props_button">Choose</button></td></tr>
         ${crop_attr_html}
         <tr><td colspan="2"><b>Track props</b> <button id="choose_track_props_button">Choose</button></td></tr>
         ${track_attr_html}
-      </table>
-          `)
+        ${tag_toggle_html}
+        ${tag_section_html}
+      </table>`)
+
+      // Toggle tag props visibility
+      table.selectAll('#toggle_tag_props_btn').on('click', function() {
+        const section = table.select('#tag_props_section')
+        const btn = table.select('#toggle_tag_props_btn')
+        const isHidden = section.style('display') === 'none'
+        section.style('display', isHidden ? '' : 'none')
+        btn.text(isHidden ? 'Hide tag props' : 'Show tag props')
+      })
 
       table.selectAll('#choose_crop_props_button').on('click', (evt) => details.choose_crop_props_button_clicked())
       table.selectAll('#choose_track_props_button').on('click', (evt) => details.choose_track_props_button_clicked())
@@ -2567,29 +2591,38 @@ class CropDetails {
     }
     // DETAIL2
     if (details.item2) {
-      let d = details.item2 || {} // Provide default empty object instead of null to avoid errors
+      let d = details.item2 || {}
       details.div.select('#detail-div2 > img')
         .attr("src",details.gallery2.imagedir+d.new_filepath)
 
-      const table = details.div.select('#detail-info2 > .detail-table') // TODO: replace with propoer .data approach
+      const table = details.div.select('#detail-info2 > .detail-table')
         .html(`<table>
         <tr><td colspan="2"><b>Crop props</b> <button id="choose_crop_props_button">Choose</button></td></tr>
         ${crop_attr_html}
         <tr><td colspan="2"><b>Track props</b> <button id="choose_track_props_button">Choose</button></td></tr>
         ${track_attr_html}
-      </table>
-          `)
+        ${tag_toggle_html}
+        ${tag_section_html}
+      </table>`)
+
+      table.selectAll('#toggle_tag_props_btn').on('click', function() {
+        const section = table.select('#tag_props_section')
+        const btn = table.select('#toggle_tag_props_btn')
+        const isHidden = section.style('display') === 'none'
+        section.style('display', isHidden ? '' : 'none')
+        btn.text(isHidden ? 'Hide tag props' : 'Show tag props')
+      })
 
       table.selectAll('#choose_crop_props_button').on('click', (evt) => details.choose_crop_props_button_clicked())
       table.selectAll('#choose_track_props_button').on('click', (evt) => details.choose_track_props_button_clicked())
 
       table.selectAll(`input.attr-input`)
       .classed('attr-item2',true)
-      .attr('value', (_, i, nodes) => d[nodes[i].id])  // .id is attr name
-      .on('change', (evt)=> details.input_changed_attr(evt))  // Also cover bee_id
+      .attr('value', (_, i, nodes) => d[nodes[i].id])
+      .on('change', (evt)=> details.input_changed_attr(evt))
 
       table.selectAll(`span.attr`)
-        .text((_, i, nodes) => d[nodes[i].id])  // .id is attr name
+        .text((_, i, nodes) => d[nodes[i].id])
     } else {
       //Empty details
       details.div.select('#detail-div2 > img')
@@ -2981,7 +3014,7 @@ class TrackSplitGUI {
     const dirname = json_path.substring(0, json_path.lastIndexOf('/'));
 
     gui.dataset = {}
-    gui.dataset.json_path = json_path
+    gui.dataset.json_path = json_path //TODO add more config for csv cols
     gui.dataset.dirname = dirname
     gui.dataset.config = dataset_config
 
@@ -3044,18 +3077,27 @@ class TrackSplitGUI {
       tracks.forEach( (d, id) => {
         d.new_filepath = d.crop_filename
         d.frame_id = +d.frame
-        //d.filepath = d.crop_filename
         d.key = id
         d.track_key = +d.track_id
         d.video_name = 'flowerpatch'
-        d.bee_id = d.bee_id!='0' ? Number(d.bee_id) : undefined // 0 is undefined
+        // Only set bee_id if not present or is empty/0/null
+        if (d.bee_id === undefined || d.bee_id === null || d.bee_id === '' || d.bee_id === '0') {
+          d.bee_id = undefined
+        } else {
+          d.bee_id = Number(d.bee_id)
+        }
         if (isNaN(d.bee_id)) d.bee_id = null
       })
       //imagedir = '/data/flowerpatch/crops/'
       categories_to_indices(tracks, 'video_name', 'video_key')
     } else if (schema == 'reid') { // ReID data
-      new_column(tracks, 'bee_id', d => Number(d.ID))
-      tracks.forEach( (d, id) => {
+      // Only set bee_id if not present
+      tracks.forEach((d, id) => {
+        if (d.bee_id === undefined) {
+          d.bee_id = Number(d.ID)
+        } else {
+          d.bee_id = Number(d.bee_id)
+        }
         if (isNaN(d.bee_id)) d.bee_id = null
       })
 
@@ -3081,6 +3123,34 @@ class TrackSplitGUI {
     } else {
       console.log(`Unknown track schema ${schema}. LEFT AS IS, may not work`)
     }
+
+    // --- Ensure all internal fields are present and preserved ---
+    // List of fields to preserve (add more as needed)
+    const internalFields = [
+      'bee_id', 'bee_id_src', 'bee_id_orig', 'ignore',
+      'is_track_ref', 'is_bee_id_ref', 'bee_id_valid', 'track_valid'
+    ];
+    // For each row, ensure all fields are present and coerce types if needed
+    tracks.forEach(d => {
+      internalFields.forEach(f => {
+        if (!(f in d) || d[f] === undefined) {
+          // Set default values for missing fields
+          if (f === 'ignore' || f === 'is_track_ref' || f === 'is_bee_id_ref') {
+            d[f] = false;
+          } else if (f === 'bee_id_valid' || f === 'track_valid') {
+            d[f] = 'unknown';
+          } else {
+            d[f] = null;
+          }
+        } else {
+          // Try to coerce to correct type if present
+          if (f === 'ignore' || f === 'is_track_ref' || f === 'is_bee_id_ref') {
+            d[f] = (d[f] === true || d[f] === 'true' || d[f] === 1 || d[f] === '1');
+          }
+        }
+      });
+    });
+    // --- End ensure internal fields ---
 
     // Preselect Reference items for each track
     let track_refs = gui.get_one_per_track()

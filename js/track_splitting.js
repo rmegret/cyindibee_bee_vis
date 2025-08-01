@@ -1552,6 +1552,13 @@ class CropGallery {
       evt.preventDefault();
       evt.stopPropagation()
     }
+    if (evt.code === 'KeyR' && evt.altKey) {
+      if (view.scrubbed && view.scrubbed.item && gui.details) {
+        gui.details.set_as_reference();
+        evt.preventDefault();
+        evt.stopPropagation();
+      }
+    }
     if (evt.code=='KeyT') {
       view.click_load_selected_track()
       evt.preventDefault();
@@ -1841,11 +1848,22 @@ class CropGallery {
     } else { // Regular selection
       gui.details.set_bee_id_from2() // Label the current blue selection
     }
-    let next = gui.crop_gallery.gallery.find(d => d.order >= current.order)
-    if (next == null) next = gui.crop_gallery.gallery[0] 
     gui.crop_gallery.reorder()
     gui.crop_gallery.update()
-    gui.crop_gallery.select_gallery_item(next)
+    // Find the next available item after the current, or the first if none
+    let next = null;
+    if (current) {
+      next = gui.crop_gallery.gallery.find(d => d.order > current.order);
+    }
+    if (!next && gui.crop_gallery.gallery.length > 0) {
+      next = gui.crop_gallery.gallery[0];
+    }
+    if (next) {
+      gui.crop_gallery.select_gallery_item(next);
+      gui.details.set_detail(next.item);
+    } else {
+      gui.details.set_detail(null);
+    }
     gui.crop_gallery2.reorder()
     gui.crop_gallery.update()
   }
@@ -2478,16 +2496,37 @@ class CropDetails {
       detail_div.select('.detail-info').append('div').attr('class','detail-toolbar')
 
     // Send
+    // Button to set the current frame as the reference for its track (and bee_id if applicable)
     detail_div.select('.detail-toolbar').append("button")
       .text("Set as reference")
-      .on('click', function() { details.set_item_gallery2(details.item) })
+      .on('click', function() { details.set_as_reference(); })
+ 
     detail_div.select('.detail-toolbar').append("button")
       .text("Load whole track")
       .on('click', function() { details.load_whole_track(details.item) })
     detail_div.select('.detail-toolbar').append("button")
         .text("Copy bee_id from right")
         .on('click', function() { details.transfer_bee_id(details.item, details.item2) })
-
+    
+    // Button to match galleries
+    detail_div.select('.detail-toolbar').append("button")
+        .text("Match galleries")
+        .on('click', function() {
+            if (details.gallery2 && details.gallery) {
+                // Only copy filter-related properties
+                if (details.gallery2.dataset_query && details.gallery.dataset_query) {
+                    details.gallery.dataset_query = JSON.parse(JSON.stringify(details.gallery2.dataset_query));
+                }
+                if ('filter' in details.gallery2) details.gallery.filter = details.gallery2.filter;
+                if ('scope' in details.gallery2) details.gallery.scope = details.gallery2.scope;
+                if ('order' in details.gallery2) details.gallery.order = details.gallery2.order;
+                if ('sort' in details.gallery2) details.gallery.sort = details.gallery2.sort;
+                if ('view_mode' in details.gallery2) details.gallery.view_mode = details.gallery2.view_mode;
+                // Do NOT copy selection, gallery, scrubbed, or focus state!
+                if ('update' in details.gallery) details.gallery.update();
+            }
+        })
+        
     // RIGHT DETAILS
     let detail_div2 = details.div.append("div")
       .attr('id','detail-div2')
@@ -2615,7 +2654,6 @@ class CropDetails {
     
   };
   
-  
   choose_crop_props_button_clicked() {
     const comma_list = this.crop_props.join(',')
     const val = prompt('crop_props list:', comma_list)
@@ -2630,6 +2668,7 @@ class CropDetails {
       this.track_props = val.split(",")
     this.render()
   }
+  
   input_changed_attr(evt) {
     console.log('input_changed_attr',evt)
     const input = evt.srcElement
@@ -2693,6 +2732,27 @@ class CropDetails {
 
     this._emit("bee_id_changed", item) // May trigger change id to the whole track at gui level
   }
+  // Set the current item as the reference for its track and bee_id
+  set_as_reference() {
+    if (!this.item) return;
+    const item = this.item;
+    // --- Ensure only one is_track_ref per track_key ---
+    gui.tracks.forEach(d => {
+      if (d.track_key === item.track_key) {
+        d.is_track_ref = (d.key === item.key); // Set only for this item, clear for others
+      }
+    });
+    // --- Ensure only one is_bee_id_ref per bee_id ---
+    if (item.bee_id != null) {
+      gui.tracks.forEach(d => {
+        if (d.bee_id === item.bee_id) {
+          d.is_bee_id_ref = (d.key === item.key); // Set only for this item, clear for others
+        }
+      });
+    }
+    gui.refresh();
+    this.set_item_gallery2(item);
+    }
   set_bee_id_from2(item2) { // Set bee_id for detail1 current blue selection from detail2
     if (!item2)
       item2 = this.item2
@@ -3134,14 +3194,30 @@ class TrackSplitGUI {
     });
     // --- End ensure internal fields ---
 
-    // Preselect Reference items for each track
-    let track_refs = gui.get_one_per_track()
-    gui.tracks.forEach( item => {item.is_track_ref = false; item.is_bee_id_ref = false} )
-    track_refs.forEach( item => {item.is_track_ref = true} )
-    let bee_id_refs = gui.get_one_per_bee_id()
-    bee_id_refs.forEach( item => {item.is_bee_id_ref = true} )
+    // Preselect Reference items for each track and bee_id only if not already specified
 
-    //tracks = d3.sort( tracks, d => d.new_filepath ) // Do not sort to keep keys aligned
+    // Track references: only set if no is_track_ref is already true for that track
+    let track_refs = gui.get_one_per_track();
+    gui.tracks.forEach(item => {
+      // Only clear if no item in this track has is_track_ref already set
+      if (!gui.tracks.some(d => d.track_key === item.track_key && d.is_track_ref)) {
+        item.is_track_ref = false;
+      }
+    });
+    track_refs.forEach(item => {
+      // Only set if no item in this track has is_track_ref already set
+      if (!gui.tracks.some(d => d.track_key === item.track_key && d.is_track_ref)) {
+        item.is_track_ref = true;
+      }
+    });
+
+    // Bee_id references: only set if no is_bee_id_ref is already true for that bee_id
+    let bee_id_refs = gui.get_one_per_bee_id();
+    bee_id_refs.forEach(item => {
+      if (item.bee_id != null && !gui.tracks.some(d => d.bee_id === item.bee_id && d.is_bee_id_ref)) {
+        item.is_bee_id_ref = true;
+      }
+    });  //tracks = d3.sort( tracks, d => d.new_filepath ) // Do not sort to keep keys aligned
     console.log(`load_csv: tracks loaded, ${tracks.length} rows`)
 
     gui.hard_refresh()

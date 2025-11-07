@@ -243,8 +243,13 @@ class LoadDataDialog {
           for (const entry of entries) {
               const fullPath = current + entry;
               if (entry.endsWith('/')) {
-                  // It's a subdirectory
-                  queue.push(fullPath);
+                  console.log(`Considering {entry}`)
+                  if (['crops/','images/'].includes(entry)) {
+                    console.log(`subfolder ${entry} blacklisted. IGNORED`)
+                  } else {
+                    // It's a subdirectory
+                    queue.push(fullPath);
+                  }
               } else if (patternFn(fullPath)) {
                   csvPaths.push(fullPath);
               }
@@ -268,10 +273,19 @@ class LoadDataDialog {
 
           for (const entry of entries) {
               const fullPath = current + entry;
+              const fullUrlEntry = fullUrl + entry
               if (entry.endsWith('/')) {
-                  // It's a subdirectory
-                  if (depth<dialog.config.max_depth) {
-                    queue.push([fullPath,depth+1]);
+                  console.log(`Considering ${entry}`)
+                  if (['crops_all/','crops/','images/','raw_videos','videos','runs'].includes(entry)) {
+                    console.log(`subfolder ${entry} blacklisted. IGNORED`)
+                    dialog.outputDebug.textContent += `\nSKIPPING ${fullUrlEntry} (black list)`;
+                  } else {
+                    if (depth<dialog.config.max_depth) {
+                      // It's a subdirectory
+                      queue.push([fullPath, depth+1]);
+                    } else {
+                      dialog.outputDebug.textContent += `\nSKIPPING ${fullUrlEntry} (max_depth)`;
+                    }
                   }
               } else if (patternFn(fullPath)) {
                   paths.push(fullPath);
@@ -2146,6 +2160,7 @@ class FeatureBand {
           const rows = data.map(row => featureNames.map(name => parseFloat(row[name])));
 
           band.feature_keys = data.map(row => Number(row.key));
+          band.key_to_idx = Object.fromEntries(band.feature_keys.map((k, i) => [k, i]));
           // FIXME: for the moment, assume all keys are range(N)
 
           function euclideanNorm(vector) {
@@ -2229,7 +2244,8 @@ class FeatureBand {
     
       // FIXME: for the moment, assume all keys are range(N)
       // Else, would need a map band.normalizedRows[key_to_feature_idx.get(gallery_item.item.key)]
-      const rows2 = band.gallery_track.map(gallery_item => band.normalizedRows[gallery_item.item.key])
+      //const rows2 = band.gallery_track.map(gallery_item => band.normalizedRows[gallery_item.item.key])
+      const rows2 = band.gallery_track.map(gallery_item => band.normalizedRows[band.key_to_idx[gallery_item.item.key]??0]) // FIXME: default index 0
       //console.log(rows2)
 
       band.display_data = rows2
@@ -2355,8 +2371,15 @@ class FeatureBand {
   compute_similarity(gallery_item, gallery_track) {
     const band = this
     const features = band.rows
-    const rows2 = gallery_track.map(gi => features[gi.item.key])
-    const row1 = features[gallery_item.item.key]
+
+    const keys2 = gallery_track.map(gi => gi.item.key)
+    const key1 = gallery_item.item.key
+
+    const ids2 = keys2.map( key => band.key_to_idx[key]??0 )
+    const idx1 = band.key_to_idx[key1]
+
+    const rows2 = ids2.map(idx => features[idx])
+    const row1 = features[idx1]
     //console.log(features)
     //console.log(rows2)
     //console.log(row1)

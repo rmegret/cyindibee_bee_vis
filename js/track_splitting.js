@@ -1566,6 +1566,13 @@ class CropGallery {
       evt.preventDefault();
       evt.stopPropagation()
     }
+    if (evt.code === 'KeyR' && evt.altKey) {
+      if (view.scrubbed && view.scrubbed.item && gui.details) {
+        gui.details.set_as_reference();
+        evt.preventDefault();
+        evt.stopPropagation();
+      }
+    }
     if (evt.code=='KeyT') {
       view.click_load_selected_track()
       evt.preventDefault();
@@ -1855,11 +1862,22 @@ class CropGallery {
     } else { // Regular selection
       gui.details.set_bee_id_from2() // Label the current blue selection
     }
-    let next = gui.crop_gallery.gallery.find(d => d.order >= current.order)
-    if (next == null) next = gui.crop_gallery.gallery[0] 
     gui.crop_gallery.reorder()
     gui.crop_gallery.update()
-    gui.crop_gallery.select_gallery_item(next)
+    // Find the next available item after the current, or the first if none
+    let next = null;
+    if (current) {
+      next = gui.crop_gallery.gallery.find(d => d.order > current.order);
+    }
+    if (!next && gui.crop_gallery.gallery.length > 0) {
+      next = gui.crop_gallery.gallery[0];
+    }
+    if (next) {
+      gui.crop_gallery.select_gallery_item(next);
+      gui.details.set_detail(next.item);
+    } else {
+      gui.details.set_detail(null);
+    }
     gui.crop_gallery2.reorder()
     gui.crop_gallery.update()
   }
@@ -2501,16 +2519,37 @@ class CropDetails {
       detail_div.select('.detail-info').append('div').attr('class','detail-toolbar')
 
     // Send
+    // Button to set the current frame as the reference for its track (and bee_id if applicable)
     detail_div.select('.detail-toolbar').append("button")
       .text("Set as reference")
-      .on('click', function() { details.set_item_gallery2(details.item) })
+      .on('click', function() { details.set_as_reference(); })
+ 
     detail_div.select('.detail-toolbar').append("button")
       .text("Load whole track")
       .on('click', function() { details.load_whole_track(details.item) })
     detail_div.select('.detail-toolbar').append("button")
         .text("Copy bee_id from right")
         .on('click', function() { details.transfer_bee_id(details.item, details.item2) })
-
+    
+    // Button to match galleries
+    detail_div.select('.detail-toolbar').append("button")
+        .text("Match galleries")
+        .on('click', function() {
+            if (details.gallery2 && details.gallery) {
+                // Only copy filter-related properties
+                if (details.gallery2.dataset_query && details.gallery.dataset_query) {
+                    details.gallery.dataset_query = JSON.parse(JSON.stringify(details.gallery2.dataset_query));
+                }
+                if ('filter' in details.gallery2) details.gallery.filter = details.gallery2.filter;
+                if ('scope' in details.gallery2) details.gallery.scope = details.gallery2.scope;
+                if ('order' in details.gallery2) details.gallery.order = details.gallery2.order;
+                if ('sort' in details.gallery2) details.gallery.sort = details.gallery2.sort;
+                if ('view_mode' in details.gallery2) details.gallery.view_mode = details.gallery2.view_mode;
+                // Do NOT copy selection, gallery, scrubbed, or focus state!
+                if ('update' in details.gallery) details.gallery.update();
+            }
+        })
+        
     // RIGHT DETAILS
     let detail_div2 = details.div.append("div")
       .attr('id','detail-div2')
@@ -2546,15 +2585,21 @@ class CropDetails {
       }
     }
     let track_attr_html = ''
+    // Track which fields are currently selected for showing
+    let shown_fields = details.track_props.filter(f => !(details.track_props_hidden||[]).includes(f));
+    let all_hidden = details._track_props_all_hidden || false;
     for (let attr of details.track_props) {
       const schema = Object.assign({}, details.props_schema['default'], details.props_schema[attr]);
       const attr_level = 'attr-track'
+      const row_style = (!all_hidden && shown_fields.includes(attr)) ? '' : ' style="display:none;"';
       if (schema.editable) {
-        track_attr_html += `<tr><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
+        track_attr_html += `<tr class="track-prop-row" data-attr="${attr}"${row_style}><td>${attr}</td><td><input class='attr attr-input ${attr_level}' id='${attr}'></input></td></tr>`
       } else {
-        track_attr_html += `<tr><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
+        track_attr_html += `<tr class="track-prop-row" data-attr="${attr}"${row_style}><td>${attr}</td><td><span class='attr ${attr_level}' id='${attr}'></span></td></tr>`
       }
     }
+    // Add a toggle for hiding/showing all selected track props
+    let track_toggle_html = `<button type=\"button\" id=\"toggle_track_props_btn\" style=\"margin-left:8px;\">${all_hidden ? 'Show' : 'Hide'} track props</button>`
 
     // DETAIL
     if (details.item) {
@@ -2562,14 +2607,19 @@ class CropDetails {
       details.div.select('#detail-div > img')
         .attr("src",details.gallery.imagedir+d.new_filepath)
 
-      const table = details.div.select('#detail-info > .detail-table') // TODO: replace with propoer .data approach
+      const table = details.div.select('#detail-info > .detail-table')
         .html(`<table>
         <tr><td colspan="2"><b>Crop props</b> <button id="choose_crop_props_button">Choose</button></td></tr>
         ${crop_attr_html}
-        <tr><td colspan="2"><b>Track props</b> <button id="choose_track_props_button">Choose</button></td></tr>
+        <tr><td colspan=\"2\"><b>Track props</b> <button id=\"choose_track_props_button\">Choose</button>${track_toggle_html}</td></tr>
         ${track_attr_html}
-      </table>
-          `)
+      </table>`)
+
+      // Toggle all selected track props visibility
+      table.selectAll('#toggle_track_props_btn').on('click', function() {
+        details._track_props_all_hidden = !details._track_props_all_hidden;
+        details.render();
+      })
 
       table.selectAll('#choose_crop_props_button').on('click', (evt) => details.choose_crop_props_button_clicked())
       table.selectAll('#choose_track_props_button').on('click', (evt) => details.choose_track_props_button_clicked())
@@ -2590,29 +2640,33 @@ class CropDetails {
     }
     // DETAIL2
     if (details.item2) {
-      let d = details.item2 || {} // Provide default empty object instead of null to avoid errors
+      let d = details.item2 || {}
       details.div.select('#detail-div2 > img')
         .attr("src",details.gallery2.imagedir+d.new_filepath)
 
-      const table = details.div.select('#detail-info2 > .detail-table') // TODO: replace with propoer .data approach
+      const table = details.div.select('#detail-info2 > .detail-table')
         .html(`<table>
         <tr><td colspan="2"><b>Crop props</b> <button id="choose_crop_props_button">Choose</button></td></tr>
         ${crop_attr_html}
-        <tr><td colspan="2"><b>Track props</b> <button id="choose_track_props_button">Choose</button></td></tr>
+        <tr><td colspan=\"2\"><b>Track props</b> <button id=\"choose_track_props_button\">Choose</button>${track_toggle_html}</td></tr>
         ${track_attr_html}
-      </table>
-          `)
+      </table>`)
+
+      table.selectAll('#toggle_track_props_btn').on('click', function() {
+        details._track_props_all_hidden = !details._track_props_all_hidden;
+        details.render();
+      })
 
       table.selectAll('#choose_crop_props_button').on('click', (evt) => details.choose_crop_props_button_clicked())
       table.selectAll('#choose_track_props_button').on('click', (evt) => details.choose_track_props_button_clicked())
 
       table.selectAll(`input.attr-input`)
       .classed('attr-item2',true)
-      .attr('value', (_, i, nodes) => d[nodes[i].id])  // .id is attr name
-      .on('change', (evt)=> details.input_changed_attr(evt))  // Also cover bee_id
+      .attr('value', (_, i, nodes) => d[nodes[i].id])
+      .on('change', (evt)=> details.input_changed_attr(evt))
 
       table.selectAll(`span.attr`)
-        .text((_, i, nodes) => d[nodes[i].id])  // .id is attr name
+        .text((_, i, nodes) => d[nodes[i].id])
     } else {
       //Empty details
       details.div.select('#detail-div2 > img')
@@ -2622,7 +2676,6 @@ class CropDetails {
     }
     
   };
-  
   
   choose_crop_props_button_clicked() {
     const comma_list = this.crop_props.join(',')
@@ -2638,6 +2691,7 @@ class CropDetails {
       this.track_props = val.split(",")
     this.render()
   }
+  
   input_changed_attr(evt) {
     console.log('input_changed_attr',evt)
     const input = evt.srcElement
@@ -2701,6 +2755,27 @@ class CropDetails {
 
     this._emit("bee_id_changed", item) // May trigger change id to the whole track at gui level
   }
+  // Set the current item as the reference for its track and bee_id
+  set_as_reference() {
+    if (!this.item) return;
+    const item = this.item;
+    // --- Ensure only one is_track_ref per track_key ---
+    gui.tracks.forEach(d => {
+      if (d.track_key === item.track_key) {
+        d.is_track_ref = (d.key === item.key); // Set only for this item, clear for others
+      }
+    });
+    // --- Ensure only one is_bee_id_ref per bee_id ---
+    if (item.bee_id != null) {
+      gui.tracks.forEach(d => {
+        if (d.bee_id === item.bee_id) {
+          d.is_bee_id_ref = (d.key === item.key); // Set only for this item, clear for others
+        }
+      });
+    }
+    gui.refresh();
+    this.set_item_gallery2(item);
+    }
   set_bee_id_from2(item2) { // Set bee_id for detail1 current blue selection from detail2
     if (!item2)
       item2 = this.item2
@@ -3004,7 +3079,7 @@ class TrackSplitGUI {
     const dirname = json_path.substring(0, json_path.lastIndexOf('/'));
 
     gui.dataset = {}
-    gui.dataset.json_path = json_path
+    gui.dataset.json_path = json_path //TODO add more config for csv cols
     gui.dataset.dirname = dirname
     gui.dataset.config = dataset_config
 
@@ -3067,18 +3142,27 @@ class TrackSplitGUI {
       tracks.forEach( (d, id) => {
         d.new_filepath = d.crop_filename
         d.frame_id = +d.frame
-        //d.filepath = d.crop_filename
         d.key = id
         d.track_key = +d.track_id
         d.video_name = 'flowerpatch'
-        d.bee_id = d.bee_id!='0' ? Number(d.bee_id) : undefined // 0 is undefined
+        // Only set bee_id if not present or is empty/0/null
+        if (d.bee_id === undefined || d.bee_id === null || d.bee_id === '' || d.bee_id === '0') {
+          d.bee_id = undefined
+        } else {
+          d.bee_id = Number(d.bee_id)
+        }
         if (isNaN(d.bee_id)) d.bee_id = null
       })
       //imagedir = '/data/flowerpatch/crops/'
       categories_to_indices(tracks, 'video_name', 'video_key')
     } else if (schema == 'reid') { // ReID data
-      new_column(tracks, 'bee_id', d => Number(d.ID))
-      tracks.forEach( (d, id) => {
+      // Only set bee_id if not present
+      tracks.forEach((d, id) => {
+        if (d.bee_id === undefined) {
+          d.bee_id = Number(d.ID)
+        } else {
+          d.bee_id = Number(d.bee_id)
+        }
         if (isNaN(d.bee_id)) d.bee_id = null
       })
 
@@ -3105,14 +3189,58 @@ class TrackSplitGUI {
       console.log(`Unknown track schema ${schema}. LEFT AS IS, may not work`)
     }
 
-    // Preselect Reference items for each track
-    let track_refs = gui.get_one_per_track()
-    gui.tracks.forEach( item => {item.is_track_ref = false; item.is_bee_id_ref = false} )
-    track_refs.forEach( item => {item.is_track_ref = true} )
-    let bee_id_refs = gui.get_one_per_bee_id()
-    bee_id_refs.forEach( item => {item.is_bee_id_ref = true} )
+    // --- Ensure all internal fields are present and preserved ---
+    // List of fields to preserve (add more as needed)
+    const internalFields = [
+      'bee_id', 'bee_id_src', 'bee_id_orig', 'ignore',
+      'is_track_ref', 'is_bee_id_ref', 'bee_id_valid', 'track_valid'
+    ];
+    // For each row, ensure all fields are present and coerce types if needed
+    tracks.forEach(d => {
+      internalFields.forEach(f => {
+        if (!(f in d) || d[f] === undefined) {
+          // Set default values for missing fields
+          if (f === 'ignore' || f === 'is_track_ref' || f === 'is_bee_id_ref') {
+            d[f] = false;
+          } else if (f === 'bee_id_valid' || f === 'track_valid') {
+            d[f] = 'unknown';
+          } else {
+            d[f] = null;
+          }
+        } else {
+          // Try to coerce to correct type if present
+          if (f === 'ignore' || f === 'is_track_ref' || f === 'is_bee_id_ref') {
+            d[f] = (d[f] === true || d[f] === 'true' || d[f] === 1 || d[f] === '1');
+          }
+        }
+      });
+    });
+    // --- End ensure internal fields ---
 
-    //tracks = d3.sort( tracks, d => d.new_filepath ) // Do not sort to keep keys aligned
+    // Preselect Reference items for each track and bee_id only if not already specified
+
+    // Track references: only set if no is_track_ref is already true for that track
+    let track_refs = gui.get_one_per_track();
+    gui.tracks.forEach(item => {
+      // Only clear if no item in this track has is_track_ref already set
+      if (!gui.tracks.some(d => d.track_key === item.track_key && d.is_track_ref)) {
+        item.is_track_ref = false;
+      }
+    });
+    track_refs.forEach(item => {
+      // Only set if no item in this track has is_track_ref already set
+      if (!gui.tracks.some(d => d.track_key === item.track_key && d.is_track_ref)) {
+        item.is_track_ref = true;
+      }
+    });
+
+    // Bee_id references: only set if no is_bee_id_ref is already true for that bee_id
+    let bee_id_refs = gui.get_one_per_bee_id();
+    bee_id_refs.forEach(item => {
+      if (item.bee_id != null && !gui.tracks.some(d => d.bee_id === item.bee_id && d.is_bee_id_ref)) {
+        item.is_bee_id_ref = true;
+      }
+    });  //tracks = d3.sort( tracks, d => d.new_filepath ) // Do not sort to keep keys aligned
     console.log(`load_csv: tracks loaded, ${tracks.length} rows`)
 
     gui.hard_refresh()

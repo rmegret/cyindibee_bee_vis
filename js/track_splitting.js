@@ -2159,12 +2159,10 @@ class FeatureBand {
           console.log(`features loaded, ${data.length} rows`)
           //band.data = data
           //gtracks.features = data
-          // Count columns that match feature_
-          const n_features =  Object.keys(data[0]).filter(name => name.startsWith("feature_")).length;
-          console.log(`Detected ${n_features} features per row`)
-          const featureNames = Array.from({ length: n_features }, (_, i) => `feature_${i}`);
+          
+          const featureNames = Array.from({ length: 128 }, (_, i) => `feature_${i}`);
           const rows = data.map(row => featureNames.map(name => parseFloat(row[name])));
-         
+
           band.feature_keys = data.map(row => Number(row.key));
           // FIXME: for the moment, assume all keys are range(N)
 
@@ -2377,9 +2375,9 @@ class FeatureBand {
     const features = band.rows
     const rows2 = gallery_track.map(gi => features[gi.item.key])
     const row1 = features[gallery_item.item.key]
-    console.log(features)
-    console.log(rows2)
-    console.log(row1)
+    //console.log(features)
+    //console.log(rows2)
+    //console.log(row1)
 
     const negative_euclidean = (row,x) => {
       let acc = 0
